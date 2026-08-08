@@ -7,11 +7,10 @@ import Layout
 import LayoutTypes
 import Render
 import Element
-import Color
 import Event
 import Drag
 
-HostState(host) : {
+HostState : {
 	keys : List(U8),
 	keys_pressed : List(U8),
 	keys_released : List(U8),
@@ -26,7 +25,6 @@ HostState(host) : {
 		x : F32,
 		y : F32,
 	},
-	..host,
 }
 
 EventBindings(msg) : Dict(U64, List(Event.Handler(msg)))
@@ -62,35 +60,40 @@ default_scroll_state = {
 	momentum_time: 0,
 }
 
+## Build the frame-local input snapshot from a platform host.
+##
+## The host packs held/pressed/released bits per key and button into one byte;
+## expand them into per-index 0/1 lists so the package stays keyed by code.
+build_input : { keys : List(U8), mouse : { buttons : List(U8), left : Bool, middle : Bool, right : Bool, wheel_y : F32, x : F32, y : F32, ..mouse_state }, ..host_state } -> HostState
+build_input = |host| {
+	{
+		keys: derive(host.keys, 1),
+		keys_pressed: derive(host.keys, 2),
+		keys_released: derive(host.keys, 4),
+		mouse: {
+			buttons: derive(host.mouse.buttons, 1),
+			buttons_pressed: derive(host.mouse.buttons, 2),
+			buttons_released: derive(host.mouse.buttons, 4),
+			left: host.mouse.left,
+			middle: host.mouse.middle,
+			right: host.mouse.right,
+			wheel: host.mouse.wheel_y,
+			x: host.mouse.x,
+			y: host.mouse.y,
+		},
+	}
+}
+
+## Expand packed per-key/button state bytes into per-index 0/1 lists.
+derive : List(U8), U8 -> List(U8)
+derive = |states, mask|
+	List.map(states, |byte| if U8.bitwise_and(byte, mask) != 0 1 else 0)
+
 Program :: [].{
 
-	Config : {
-		title : Str,
-		width : I32,
-		height : I32,
-		target_fps : I32,
-		resizable : Bool,
-		fullscreen : Bool,
-		vsync : Bool,
-		cursor_visible : Bool,
-	}
-
-	default : Config
-	default = {
-		title: "Terrocotta App",
-		width: 800,
-		height: 600,
-		target_fps: 2000,
-		resizable: Bool.True,
-		fullscreen: Bool.False,
-		vsync: Bool.False,
-		cursor_visible: Bool.True,
-	}
-
-	State(draw, model, msg) : {
+	State(model, msg) : {
 		model : model,
-		layout : Layout(draw),
-		renderer : Render(draw),
+		layout : Layout,
 		hovered : List(U64),
 		focused : U64,
 		scroll : Dict(U64, ScrollState),
@@ -98,51 +101,62 @@ Program :: [].{
 	}
 
 	new! : {
-		config : Config,
-		init! : Config => Try(m, [Exit(I64)]),
+		config : cfg,
+		init! : host => Try(m, init_errors),
 		view : m -> Element.View(msg),
 		update : m, msg -> m,
+		measure_text! : Render.MeasureTextRaw => Render.TextSize,
 	} -> {
 		init! : {
-			config : Config,
-			run! : HostState(host) => Try(State(draw, m, msg), [Exit(I64)]),
+			config : cfg,
+			run! : host => Try(State(m, msg), [Exit(I64), ..]),
 		},
-		render! : State(draw, m, msg), HostState(host) => Try(State(draw, m, msg), [Exit(I64), ..]),
+		render! : State(m, msg), { screen : { width : I32, height : I32 }, keys : List(U8), mouse : { buttons : List(U8), left : Bool, middle : Bool, right : Bool, wheel_y : F32, x : F32, y : F32, ..mouse_state }, ..host_state }, frame => Try(State(m, msg), [Exit(I64), ..]),
 	}
 		where [
-			draw.measure_text_raw! : Render.MeasureTextRaw => Render.TextSize,
-			draw.begin_frame! : () => {},
-			draw.clear! : ({ r : U8, g : U8, b : U8, a : U8 }) => {},
-			draw.text_raw! : ({ pos : Render.Vector2, text : Str, size : F32, spacing : F32, color : { r : U8, g : U8, b : U8, a : U8 }, font : U64 }) => {},
-			draw.rectangle_raw! : ({ x : F32, y : F32, width : F32, height : F32, color : { r : U8, g : U8, b : U8, a : U8 } }) => {},
-			draw.rounded_rectangle_raw! : ({ x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, color : { r : U8, g : U8, b : U8, a : U8 } }) => {},
-			draw.rounded_rectangle_lines_raw! : ({ x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 }) => {},
-			draw.draw_texture_raw! : ({ texture : U64, source : Render.Rect, dest : Render.Rect, origin : Render.Vector2, rotation : F32, tint : { r : U8, g : U8, b : U8, a : U8 } }) => {},
-			draw.begin_scissor_raw! : ({ x : F32, y : F32, width : F32, height : F32 }) => {},
-			draw.end_scissor_raw! : () => {},
-			draw.fps! : {
-				pos : { x : F32, y : F32 },
-				size : F32,
-				color : { r : U8, g : U8, b : U8, a : U8 },
+			frame.rectangle! : frame,
+			{
+				x : F32,
+				y : F32,
+				width : F32,
+				height : F32,
+				style : {
+					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
+					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+				},
 			} => {},
-			draw.end_frame! : () => {},
+			frame.rounded_rectangle! : frame,
+			{
+				x : F32,
+				y : F32,
+				width : F32,
+				height : F32,
+				radius : F32,
+				segments : I32,
+				style : {
+					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
+					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+				},
+			} => {},
+			frame.text_at! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, color : { r : U8, g : U8, b : U8, a : U8 } } => {},
+			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..scissor_errors])) => Try({}, [ScopeLimit, ..scissor_errors]),
 		]
-	new! = |{ config, init!, view, update }| {
-		screen = { w: config.width.to_f32(), h: config.height.to_f32() }
-
-		run! = |_host|
+	new! = |{ config, init!, view, update, measure_text! }| {
+		run! = |host|
 			Ok({
-				model: init!(config)?,
-				layout: Layout.new(),
-				renderer: Render.{},
+				model: init!(host).map_err(|_errs| Exit(1))?,
+				layout: Layout.new_with_measure_text(measure_text!),
 				hovered: [],
 				focused: 0,
 				scroll: Dict.empty(),
 				drag: Idle,
 			})
 
-		render! = |state, host| {
-			scroll = update_scroll_containers(state.layout, state.scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))?
+		render! = |state, host, frame| {
+			input = build_input(host)
+			screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
+
+			scroll = update_scroll_containers(state.layout, state.scroll, { x: input.mouse.x, y: input.mouse.y }, input.mouse.wheel).map_err(|_e| Exit(1))?
 
 			var $layout = state.layout.clear()
 			var $event_bindings = Dict.empty()
@@ -151,7 +165,7 @@ Program :: [].{
 				# update layout
 				($layout, node) = $layout.update!(
 					element_op,
-					|node_id| get_box_status(node_id, state.hovered, state.focused, host),
+					|node_id| get_box_status(node_id, state.hovered, state.focused, input),
 					|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
 				).map_err(|_e| Exit(1))?
 
@@ -169,16 +183,16 @@ Program :: [].{
 
 			# event handling
 			var $model = state.model
-			{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
+			{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, input, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
 			for message in messages {
 				$model = update($model, message)
 			}
 
 			# render layout
 			commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
-			state.renderer.render!(commands)
+			Render.draw_commands!(frame, commands)?
 
-			Ok({ model: $model, layout: $layout, renderer: state.renderer, hovered, focused, scroll, drag })
+			Ok({ model: $model, layout: $layout, hovered, focused, scroll, drag })
 		}
 
 		{
@@ -263,7 +277,7 @@ deepest_vertical_scroll_target = |containers, hovered| {
 default_box_status : Element.BoxStatus
 default_box_status = { hovered: Bool.False, pressed: Bool.False, focused: Bool.False, disabled: Bool.False }
 
-get_box_status : U64, List(U64), U64, HostState(host) -> Element.BoxStatus
+get_box_status : U64, List(U64), U64, HostState -> Element.BoxStatus
 get_box_status = |node_index, prev_hovered, focused, host| {
 	hovered = prev_hovered.contains(node_index)
 	{ hovered, pressed: hovered and host.mouse.left, focused: node_index == focused, disabled: Bool.False }
@@ -272,18 +286,18 @@ get_box_status = |node_index, prev_hovered, focused, host| {
 is_mouse_button_pressed : List(U8), U64 -> Bool
 is_mouse_button_pressed = |states, button|
 	match states.get(button) {
-		Ok(state) => state == 1
+		Ok(state) => U8.bitwise_and(state, 1) != 0
 		Err(_) => Bool.False
 	}
 
 is_key_pressed : List(U8), U64 -> Bool
 is_key_pressed = |states, key|
 	match states.get(key) {
-		Ok(state) => state == 1
+		Ok(state) => U8.bitwise_and(state, 1) != 0
 		Err(_) => Bool.False
 	}
 
-handle_events : Layout(draw), EventBindings(msg), HostState(host), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events : Layout(draw), EventBindings(msg), HostState, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
 handle_events = |layout, event_bindings, host, prev_hovered, prev_focused, drag_state| {
 	root_index = 0
 	pointer = { x: host.mouse.x, y: host.mouse.y }
@@ -318,7 +332,7 @@ handle_events = |layout, event_bindings, host, prev_hovered, prev_focused, drag_
 	Ok({ messages: $msgs, hovered, focused, drag })
 }
 
-pointer_button_state : HostState(host), U64 -> Event.PointerButtonState
+pointer_button_state : HostState, U64 -> Event.PointerButtonState
 pointer_button_state = |host, button| {
 	{
 		down: is_mouse_button_pressed(host.mouse.buttons, button),
@@ -327,7 +341,7 @@ pointer_button_state = |host, button| {
 	}
 }
 
-pointer_buttons : HostState(host) -> Event.PointerButtons
+pointer_buttons : HostState -> Event.PointerButtons
 pointer_buttons = |host| {
 	{
 		left: pointer_button_state(host, 0),
@@ -336,7 +350,7 @@ pointer_buttons = |host| {
 	}
 }
 
-pointer_event : Layout(draw), U64, HostState(host) -> Try(Event.PointerEvent, Layout.LayoutError)
+pointer_event : Layout(draw), U64, HostState -> Try(Event.PointerEvent, Layout.LayoutError)
 pointer_event = |layout, node_id, host| {
 	Ok({
 		position: { x: host.mouse.x, y: host.mouse.y },
@@ -422,7 +436,7 @@ get_hover_events = |bindings, hovered| {
 		)
 }
 
-get_pointer_events : Layout(draw), EventBindings(msg), List(U64), HostState(host) -> Try(List(msg), Layout.LayoutError)
+get_pointer_events : Layout(draw), EventBindings(msg), List(U64), HostState -> Try(List(msg), Layout.LayoutError)
 get_pointer_events = |layout, bindings, hovered, host| {
 	var $msgs = []
 	for node_index in hovered {

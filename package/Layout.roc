@@ -61,38 +61,6 @@ Layout(draw) :: {
 		}
 	}
 
-	## Create empty Layout using the host text measurement ability.
-	new : () -> Layout(draw)
-		where [
-			draw.measure_text_raw! : Render.MeasureTextRaw => Render.TextSize,
-		]
-	new = || {
-		Draw : draw
-		measure_text! = |config| Draw.measure_text_raw!(config)
-		new_with_measure_text(measure_text!)
-	}
-
-	## Create empty Layout with capacity reserved for internal builder lists.
-	with_capacity : U64 -> Layout(draw)
-		where [
-			draw.measure_text_raw! : Render.MeasureTextRaw => Render.TextSize,
-		]
-	with_capacity = |capacity| {
-		Draw : draw
-		measure_text! = |config| Draw.measure_text_raw!(config)
-		{
-			nodes: List.with_capacity(capacity),
-			text_contents: List.with_capacity(capacity // 2),
-			text_lines: List.with_capacity(capacity),
-			text_cache: TextMeasureCache.new(measure_text!),
-			child_indices: List.with_capacity(capacity // 2),
-			pending_children: List.with_capacity(capacity // 2),
-			node_ids: Dict.empty(),
-			root_indices: List.with_capacity(8),
-			stack: Stack.with_capacity(capacity // 2),
-		}
-	}
-
 	## Reset all frame-local layout state before building the next view.
 	clear : Layout(draw) -> Layout(draw)
 	clear = |layout| {
@@ -1994,7 +1962,7 @@ expect {
 	build = || {
 		var $layout = test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
-		$layout = add_image($layout, 200, image_cfg)?
+		$layout = add_image($layout, 200, texture)?
 		$layout = close_box($layout)?
 		$layout.solve({ w: 100, h: 100 })
 	}
@@ -2093,9 +2061,9 @@ expect {
 	build = || {
 		var $layout = test_layout()
 		$layout = open_box($layout, Auto, root_cfg)? # root: 0
-		$layout = add_image($layout, 100, image_cfg)? # root child: 1
+		$layout = add_image($layout, 100, texture)? # root child: 1
 		$layout = open_box($layout, Auto, nested_cfg)? # root child: 2
-		$layout = add_image($layout, 101, image_cfg)? # nested child: 3
+		$layout = add_image($layout, 101, texture)? # nested child: 3
 		$layout = close_box($layout)?
 		$layout = close_box($layout)?
 		Ok($layout)

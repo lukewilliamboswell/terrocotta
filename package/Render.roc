@@ -1,4 +1,4 @@
-## Render command types and dispatch for Roc-Clay layout commands.
+## Render command types for Roc-Clay layout commands.
 import Assets
 import Color
 import Element
@@ -104,7 +104,7 @@ RenderMeasureTextRaw : {
 
 RenderTextSize : { width : F32, height : F32 }
 
-Render(draw) := {}.{
+Render := [].{
 	Command : RenderCommandRaw
 	BorderConfig : RenderBorderRaw
 	TextConfig : RenderTextRawConfig
@@ -118,102 +118,203 @@ Render(draw) := {}.{
 	MeasureTextRaw : RenderMeasureTextRaw
 	TextSize : RenderTextSize
 
-	new : () -> Render(draw)
-	new = || Render.{}
-
-	render! : Render(draw), List(Command) => {}
+	draw_commands! : frame, List(Render.Command) => Try({}, [Exit(I64), ..])
 		where [
-			draw.begin_frame! : () => {},
-			draw.clear! : ({ r : U8, g : U8, b : U8, a : U8 }) => {},
-			draw.text_raw! : ({ pos : Vector2, text : Str, size : F32, spacing : F32, color : { r : U8, g : U8, b : U8, a : U8 }, font : U64 }) => {},
-			draw.rectangle_raw! : ({ x : F32, y : F32, width : F32, height : F32, color : { r : U8, g : U8, b : U8, a : U8 } }) => {},
-			draw.rounded_rectangle_raw! : ({ x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, color : { r : U8, g : U8, b : U8, a : U8 } }) => {},
-			draw.rounded_rectangle_lines_raw! : ({ x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 }) => {},
-			draw.draw_texture_raw! : ({ texture : U64, source : Rect, dest : Rect, origin : Vector2, rotation : F32, tint : { r : U8, g : U8, b : U8, a : U8 } }) => {},
-			draw.begin_scissor_raw! : ({ x : F32, y : F32, width : F32, height : F32 }) => {},
-			draw.end_scissor_raw! : () => {},
-			draw.fps! : {
-				pos : { x : F32, y : F32 },
-				size : F32,
-				color : { r : U8, g : U8, b : U8, a : U8 },
+			frame.rectangle! : frame,
+			{
+				x : F32,
+				y : F32,
+				width : F32,
+				height : F32,
+				style : {
+					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
+					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+				},
 			} => {},
-			draw.end_frame! : () => {},
+			frame.rounded_rectangle! : frame,
+			{
+				x : F32,
+				y : F32,
+				width : F32,
+				height : F32,
+				radius : F32,
+				segments : I32,
+				style : {
+					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
+					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+				},
+			} => {},
+			frame.text_at! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, color : { r : U8, g : U8, b : U8, a : U8 } } => {},
+			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 		]
-	render! = |self, commands| {
-		Draw : draw
-		_ = self
-		Draw.begin_frame!()
-		Draw.clear!(to_draw_color(0xffffff.Color)) # background
-		var $scissors = []
+	draw_commands! = |frame, commands| {
+		draw_region!(frame, commands, NoScissor)?
 
-		for command in commands {
-			match command {
-				Rectangle(r) =>
-					Draw.rectangle_raw!({ x: r.x, y: r.y, width: r.width, height: r.height, color: to_draw_color(r.color) })
-				RoundedRectangle(r) =>
-					Draw.rounded_rectangle_raw!({ x: r.x, y: r.y, width: r.width, height: r.height, radius: r.radius, segments: 12, color: to_draw_color(r.color) })
+		Ok({})
+	}
+}
+
+## Draw one contiguous command region, honoring the enclosing scissor bounds.
+draw_region! : frame, List(Render.Command), [NoScissor, Scissor(RenderRect)] => Try({}, [Exit(I64), ..])
+	where [
+		frame.rectangle! : frame,
+		{
+			x : F32,
+			y : F32,
+			width : F32,
+			height : F32,
+			style : {
+				fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
+				stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+			},
+		} => {},
+		frame.rounded_rectangle! : frame,
+		{
+			x : F32,
+			y : F32,
+			width : F32,
+			height : F32,
+			radius : F32,
+			segments : I32,
+			style : {
+				fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
+				stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+			},
+		} => {},
+		frame.text_at! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, color : { r : U8, g : U8, b : U8, a : U8 } } => {},
+		frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
+	]
+draw_region! = |frame, commands, scissor| {
+	match commands {
+		[] => Ok({})
+		[head, .. as rest] =>
+			match head {
+				Rectangle(r) => {
+					frame.rectangle!({
+						x: r.x,
+						y: r.y,
+						width: r.width,
+						height: r.height,
+						style: { fill: Fill(to_frame_color(r.color)), stroke: NoStroke },
+					})
+					draw_region!(frame, rest, scissor)
+				}
+				RoundedRectangle(r) => {
+					frame.rounded_rectangle!({
+						x: r.x,
+						y: r.y,
+						width: r.width,
+						height: r.height,
+						radius: r.radius,
+						segments: 12,
+						style: { fill: Fill(to_frame_color(r.color)), stroke: NoStroke },
+					})
+					draw_region!(frame, rest, scissor)
+				}
 				Border(b) => {
 					uniform = b.left == b.right and b.left == b.top and b.left == b.bottom
 					if b.radius > 0 and uniform and b.top > 0 {
-						Draw.rounded_rectangle_lines_raw!({ x: b.x, y: b.y, width: b.width, height: b.height, radius: b.radius, segments: 12, color: to_draw_color(b.color), thickness: b.top })
+						frame.rounded_rectangle!({
+							x: b.x,
+							y: b.y,
+							width: b.width,
+							height: b.height,
+							radius: b.radius,
+							segments: 12,
+							style: {
+								fill: NoFill,
+								stroke: Stroke({ color: to_frame_color(b.color), thickness: b.top }),
+							},
+						})
 					} else {
-						# Clay's raylib renderer uses DrawRing for rounded corners with non-uniform
-						# border widths. roc-ray does not expose DrawRing, so unsupported rounded
-						# non-uniform borders fall back to square-corner side rectangles for now.
 						if b.top > 0 {
-							Draw.rectangle_raw!({ x: b.x, y: b.y, width: b.width, height: b.top, color: to_draw_color(b.color) })
+							frame.rectangle!({
+								x: b.x,
+								y: b.y,
+								width: b.width,
+								height: b.top,
+								style: { fill: Fill(to_frame_color(b.color)), stroke: NoStroke },
+							})
 						}
 						if b.bottom > 0 {
-							Draw.rectangle_raw!({ x: b.x, y: b.y + b.height - b.bottom, width: b.width, height: b.bottom, color: to_draw_color(b.color) })
+							frame.rectangle!({
+								x: b.x,
+								y: b.y + b.height - b.bottom,
+								width: b.width,
+								height: b.bottom,
+								style: { fill: Fill(to_frame_color(b.color)), stroke: NoStroke },
+							})
 						}
 						if b.left > 0 {
-							Draw.rectangle_raw!({ x: b.x, y: b.y, width: b.left, height: b.height, color: to_draw_color(b.color) })
+							frame.rectangle!({
+								x: b.x,
+								y: b.y,
+								width: b.left,
+								height: b.height,
+								style: { fill: Fill(to_frame_color(b.color)), stroke: NoStroke },
+							})
 						}
 						if b.right > 0 {
-							Draw.rectangle_raw!({ x: b.x + b.width - b.right, y: b.y, width: b.right, height: b.height, color: to_draw_color(b.color) })
+							frame.rectangle!({
+								x: b.x + b.width - b.right,
+								y: b.y,
+								width: b.right,
+								height: b.height,
+								style: { fill: Fill(to_frame_color(b.color)), stroke: NoStroke },
+							})
 						}
 					}
+					draw_region!(frame, rest, scissor)
 				}
-				Text(t) =>
-					Draw.text_raw!({ pos: { x: t.x, y: t.y }, text: t.text, size: t.font_size, spacing: t.spacing, color: to_draw_color(t.color), font: Box.unbox(t.font) })
-				Image(img) => {
-					info = Assets.info(img.texture)
-					Draw.draw_texture_raw!({
-						texture: info.handle,
-						source: { x: 0, y: 0, width: info.width, height: info.height },
-						dest: { x: img.x, y: img.y, width: img.width, height: img.height },
-						origin: { x: 0, y: 0 },
-						rotation: 0,
-						tint: to_draw_color(Color.white),
+				Text(t) => {
+					frame.text_at!({
+						pos: { x: t.x, y: t.y },
+						text: t.text,
+						size: t.font_size,
+						color: to_frame_color(t.color),
 					})
+					draw_region!(frame, rest, scissor)
 				}
-				ScissorStart(s) => {
-					next = if $scissors.len() > 0 {
-						intersection($scissors.get($scissors.len() - 1).ok_or(s), s)
-					} else {
-						s
+				Image(_) => draw_region!(frame, rest, scissor)
+				ScissorStart(bounds) => {
+					next = match scissor {
+						NoScissor => bounds
+						Scissor(parent) => intersection(parent, bounds)
 					}
-					if $scissors.len() > 0 {
-						Draw.end_scissor_raw!()
-					}
-					Draw.begin_scissor_raw!(next)
-					$scissors = $scissors.append(next)
-				}
-				ScissorEnd => {
-					if $scissors.len() > 0 {
-						Draw.end_scissor_raw!()
-						$scissors = $scissors.sublist({ start: 0, len: $scissors.len() - 1 })
-						if $scissors.len() > 0 {
-							Draw.begin_scissor_raw!($scissors.get($scissors.len() - 1).ok_or({ x: 0, y: 0, width: 0, height: 0 }))
-						}
+					{ inner, after } = split_scissor(rest)
+					match frame.with_scissor!(
+						next,
+						|scissor_frame| {
+							draw_region!(scissor_frame, inner, Scissor(next)).map_err(|_| ScopeLimit)?
+							Ok({})
+						},
+					) {
+						Ok(_) => draw_region!(frame, after, scissor)
+						Err(_) => Err(Exit(1))
 					}
 				}
+				ScissorEnd => Err(Exit(1))
 			}
 		}
+}
 
-		Draw.fps!({ pos: { x: 0, y: 0 }, size: 16, color: to_draw_color(Color.gray) })
+## Split commands following a ScissorStart into the nested region up to the
+## matching ScissorEnd and the commands after it.
+split_scissor : List(Render.Command) -> { inner : List(Render.Command), after : List(Render.Command) }
+split_scissor = |commands| split_scissor_at(commands, 0, [])
 
-		Draw.end_frame!()
+split_scissor_at : List(Render.Command), U64, List(Render.Command) -> { inner : List(Render.Command), after : List(Render.Command) }
+split_scissor_at = |commands, depth, acc| {
+	match commands {
+		[] => { inner: acc, after: [] }
+		[ScissorStart(s), .. as rest] => split_scissor_at(rest, depth + 1, acc.append(ScissorStart(s)))
+		[ScissorEnd, .. as rest] =>
+			if depth == 0 {
+				{ inner: acc, after: rest }
+			} else {
+				split_scissor_at(rest, depth - 1, acc.append(ScissorEnd))
+			}
+		[head, .. as rest] => split_scissor_at(rest, depth, acc.append(head))
 	}
 }
 
@@ -224,11 +325,10 @@ intersection = |a, b| {
 	y = F32.max(a.y, b.y)
 	right = F32.min(a.x + a.width, b.x + b.width)
 	bottom = F32.min(a.y + a.height, b.y + b.height)
-	width = F32.max(0, right - x)
-	height = F32.max(0, bottom - y)
-	{ x, y, width, height }
+	{ x, y, width: F32.max(0, right - x), height: F32.max(0, bottom - y) }
 }
 
-# Color nominal to structural adapter
-to_draw_color : Color -> { r : U8, g : U8, b : U8, a : U8 }
-to_draw_color = |color| { r: color.r, g: color.g, b: color.b, a: color.a }
+## Project a package color to the structural RGBA record used by the frame
+## where clauses.
+to_frame_color : Color -> { r : U8, g : U8, b : U8, a : U8 }
+to_frame_color = |color| { r: color.r, g: color.g, b: color.b, a: color.a }

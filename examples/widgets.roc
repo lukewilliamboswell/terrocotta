@@ -1,9 +1,7 @@
 ## Example showcasing theme-aware widgets.
-app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
-	tc: "../package/main.roc"
-}
+app [Model, program] { rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst", tc: "../package/main.roc" }
 
+import rr.App
 import rr.Host
 import rr.Draw
 import tc.Color
@@ -14,7 +12,7 @@ import tc.Render
 import tc.Theme
 import tc.Widget
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
 AppModel : { theme : Theme, font : Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
 
@@ -72,7 +70,7 @@ theme_card = |theme, name, model| {
 						model.toggle_on,
 						|checked| SetToggle(checked),
 					),
-					Widget.label(theme, if model.theme == Theme.dark "Theme Dark enabled" else "Theme Dark disabled")
+					Widget.label(theme, if model.theme == Theme.dark "Theme Dark enabled" else "Theme Dark disabled"),
 				],
 			),
 			Widget.label(theme, "Slider: ${model.slider_value.to_str()}"),
@@ -129,19 +127,36 @@ update = |model, msg| {
 	}
 }
 
-font_path : Str
-font_path = "examples/assets/Inter-Regular.ttf"
+init! : Host => Try(AppModel, [])
+init! = |_host| {
+	Ok({
+		theme: Theme.dark,
+		font: Element.default_font,
+		slider_value: 45,
+		select_open: False,
+		select_selected: 0,
+		toggle_on: False,
+	})
+}
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| Ok({ theme: Theme.dark, font: Draw.load_font!({ path: font_path, size: 2 * 16 }).map_err(|_| Exit(1))?, slider_value: 45, select_open: False, select_selected: 0, toggle_on: False })
+measure_text! : Render.MeasureTextRaw => Render.TextSize
+measure_text! = |config| {
+	Draw.measure_text!({
+		text: config.text,
+		size: config.size,
+		spacing: config.spacing,
+		font: Draw.default_font,
+	})
+}
 
 program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
+	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
+	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
 }
 program = Program.new!({
-	config: { ..Program.default, title: "Widget Theme Showcase", width: 900, height: 520 },
+	config: App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 }),
 	init!,
 	view,
 	update,
+	measure_text!,
 })
