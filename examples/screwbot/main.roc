@@ -1329,6 +1329,7 @@ blur_shader_path = "examples/assets/screwbot-blur.fs"
 
 init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |config| {
+	default_font_metrics = Text.metrics!(Text.default_font)
 	font_asset = Draw.load_font!({ path: font_path, size: 32 }).map_err(|_| Exit(1))?
 	font_metrics = Text.metrics!(font_asset)
 	font = SceneRenderer.font(font_metrics)
@@ -1417,7 +1418,7 @@ init! = |config| {
 		camera: { yaw: 0.48, pitch: 0.34 },
 		orbit: OrbitIdle,
 	}
-	rendering = SceneRenderer.frame_adapter(resources, font_metrics)
+	rendering = SceneRenderer.frame_adapter(resources, default_font_metrics)
 	Ok({ model, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 

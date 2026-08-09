@@ -55,8 +55,11 @@ SceneRenderer :: [].{
 	font = |metrics| adapt_font(metrics)
 
 	frame_adapter : Resources, Text.Metrics -> Renderer
-	frame_adapter = |resources, metrics| {
-		measure_text = |config| metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
+	frame_adapter = |resources, default_metrics| {
+		measure_text = |config| match config.font {
+			DefaultFont => default_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
+			CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
+		}
 		renderer = Render.adapter({ render!: |frame, commands| render_commands!(frame, resources, commands) })
 		{ measure_text, renderer }
 	}
