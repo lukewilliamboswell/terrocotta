@@ -88,8 +88,8 @@ SceneRenderer :: [].{
 		resources.composite_resolution.set!({ x: SceneCamera.view_width, y: SceneCamera.view_height })
 	}
 
-	frame_adapter : Resources, Text.Metrics -> Renderer
-	frame_adapter = |resources, default_metrics| {
+	rendering : Resources, Text.Metrics -> Renderer
+	rendering = |resources, default_metrics| {
 		measure_text = |config| match config.font {
 			DefaultFont => default_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
 			CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })

@@ -1381,7 +1381,7 @@ init! = |config| {
 		camera: { yaw: 0.48, pitch: 0.34 },
 		orbit: OrbitIdle,
 	}
-	rendering = SceneRenderer.frame_adapter(resources, default_font_metrics)
+	rendering = SceneRenderer.rendering(resources, default_font_metrics)
 	Ok({ model, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 
