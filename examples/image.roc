@@ -1,14 +1,17 @@
 ## Renders an image centered in a box with interactive width and height controls.
 app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
 	tc: "../package/main.roc",
 }
 
+import rr.App
+import rr.Draw
 import rr.Host
-import rr.Draw exposing [load_font!]
 import rr.Assets as RRAssets
-import tc.Element exposing [Font, View, box, image, style]
+
+import tc.Element exposing [Font, View, box, default_font, image, style]
 import tc.Program
+import tc.Render
 import tc.Theme
 import tc.Widget
 import tc.Assets exposing [Texture]
@@ -17,9 +20,6 @@ theme = Theme.dark
 
 image_path : Str
 image_path = "examples/assets/rocotta.png"
-
-font_path : Str
-font_path = "examples/assets/Inter-Regular.ttf"
 
 size_options : List(Str)
 size_options = ["100px", "200px", "300px", "400px", "Fit (natural texture size, clipped)", "Grow (fill container)"]
@@ -35,7 +35,7 @@ index_to_sizing = |index| match index {
 	_ => Fixed(300)
 }
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
 AppModel : {
 	font : Font,
@@ -51,13 +51,25 @@ Msg : [
 	SelectHeight(U64),
 ]
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| {
+init! : Host => Try(AppModel, [Exit(U64), ..])
+init! = |_host| {
+	_ = RRAssets.load_texture!(image_path).map_err(|_| Exit(1))?
 	Ok({
-		font: load_font!({ path: font_path, size: 2 * 16 }).map_err(|_| Exit(1))?,
-		texture: RRAssets.load_texture!(image_path).map_err(|_| Exit(1))?,
+		font: default_font,
+		# Placeholder texture; tc.Assets.load_texture! is not wired up yet.
+		texture: Box.box({ handle: 0, width: 100, height: 100 }),
 		select_width: { open: False, selected: 2 },
 		select_height: { open: False, selected: 2 },
+	})
+}
+
+measure_text! : Render.MeasureTextRaw => Render.TextSize
+measure_text! = |config| {
+	Draw.measure_text!({
+		text: config.text,
+		size: config.size,
+		spacing: config.spacing,
+		font: Draw.default_font,
 	})
 }
 
@@ -148,12 +160,13 @@ view = |model| {
 }
 
 program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
+	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
+	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
 }
 program = Program.new!({
-	config: { ..Program.default, title: "Image Example", width: 700, height: 500 },
+	config: App.default.with_title("Image Example").with_size({ width: 700, height: 500 }),
 	init!,
 	view,
 	update,
+	measure_text!,
 })

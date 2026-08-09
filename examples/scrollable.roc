@@ -1,24 +1,36 @@
 ## Scrollable list demonstration.
 app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
     tc: "../package/main.roc",
 }
 
-import rr.Host
+import rr.App
 import rr.Draw
+import rr.Host
 
 import tc.Element exposing [box, text, View, style]
 import tc.Program
+import tc.Render
 import tc.Theme
 
 theme = Theme.light
 
-Model : Program.State(Draw, {}, Msg)
+Model : Program.State({}, Msg)
 
 Msg : []
 
-init! : Program.Config => Try({}, [Exit(I64)])
-init! = |_config| Ok({})
+init! : Host => Try({}, [])
+init! = |_host| Ok({})
+
+measure_text! : Render.MeasureTextRaw => Render.TextSize
+measure_text! = |config| {
+	Draw.measure_text!({
+		text: config.text,
+		size: config.size,
+		spacing: config.spacing,
+		font: Draw.default_font,
+	})
+}
 
 update : {}, Msg -> {}
 update = |model, _msg| model
@@ -72,12 +84,13 @@ view = |_model| {
 }
 
 program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
+	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
+	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
 }
 program = Program.new!({
-	config: { ..Program.default, title: "Scrollable Container", width: 720, height: 520 },
+	config: App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 }),
 	init!,
 	view,
 	update,
+	measure_text!,
 })

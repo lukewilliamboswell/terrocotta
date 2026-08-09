@@ -1,14 +1,16 @@
 ## Text wrapping showcase with lorem ipsum paragraphs.
 app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
 	tc: "../package/main.roc",
 }
 
-import rr.Host
+import rr.App
 import rr.Draw
+import rr.Host
 import tc.Color
 import tc.Element exposing [Font, TextWrap.*, View, box, default_font, style, text]
 import tc.Program
+import tc.Render
 import tc.Theme
 
 theme = Theme.light
@@ -25,7 +27,7 @@ newline_lorem = "Lorem ipsum dolor sit amet.\nInteger non sem vitae lacus.\nDone
 none_lorem : Str
 none_lorem = "Short raw line."
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
 AppModel : {
 	font : Font,
@@ -33,10 +35,20 @@ AppModel : {
 
 Msg : [NoOp]
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| {
-	font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
-	Ok({ font: font })
+init! : Host => Try(AppModel, [Exit(U64), ..])
+init! = |_host| {
+	_ = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
+	Ok({ font: default_font })
+}
+
+measure_text! : Render.MeasureTextRaw => Render.TextSize
+measure_text! = |config| {
+	Draw.measure_text!({
+		text: config.text,
+		size: config.size,
+		spacing: config.spacing,
+		font: Draw.default_font,
+	})
 }
 
 update : AppModel, Msg -> AppModel
@@ -126,12 +138,13 @@ view = |model| {
 }
 
 program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
+	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
+	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
 }
 program = Program.new!({
-	config: { ..Program.default, title: "Text Wrap Example", width: 800, height: 600, resizable: Bool.True },
+	config: App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True),
 	init!,
 	view,
 	update,
+	measure_text!,
 })
