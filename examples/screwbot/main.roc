@@ -14,6 +14,7 @@ import rr.Draw
 import rr.Program as RayProgram
 import rr.Physics
 import rr.Assets
+import rr.Text
 
 import tc.Color
 import tc.Element exposing [Font, View, box, canvas, style, text]
@@ -28,7 +29,7 @@ import SceneCamera exposing [Point2]
 import SceneRenderer
 import Warehouse exposing [Bounds3]
 
-Model :: Program.ElmFrameState(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame)
 
 AppModel : {
 	theme : Theme,
@@ -45,6 +46,8 @@ AppModel : {
 	robot_reachable : Draw.F32Uniform,
 	robot_error : Draw.F32Uniform,
 	composite_time : Draw.F32Uniform,
+	blur_resolution : Draw.Vec2Uniform,
+	composite_resolution : Draw.Vec2Uniform,
 	target : Physics.Point,
 	arm : RobotArm,
 	show_pga : Bool,
@@ -115,6 +118,85 @@ shadow = 0x03060d.Color
 
 clamp : F32, F32, F32 -> F32
 clamp = |value, lo, hi| value.min(hi).max(lo)
+
+## Scene values supplied to Screwbot's shaders with a prepared command list.
+SceneParameters : {
+	seconds : F32,
+	target_uv : { x : F32, y : F32 },
+	reachable_value : F32,
+	error_amount : F32,
+}
+
+is_compact_layout : F32 -> Bool
+is_compact_layout = |screen_width| screen_width < 1000
+
+scene_parameters : RobotArm, Physics.Point, U64 -> SceneParameters
+scene_parameters = |arm, target_point, timestamp_nanos| {
+	solution = arm.solve(target_point)
+	target = solution.target.coords()
+	{
+		seconds: timestamp_nanos.to_f32() / 1_000_000_000,
+		target_uv: {
+			x: (target.x - Warehouse.layout.min_x) / (Warehouse.layout.max_x - Warehouse.layout.min_x),
+			y: (target.z - Warehouse.layout.min_z) / (Warehouse.layout.max_z - Warehouse.layout.min_z),
+		},
+		reachable_value: if solution.reachable 1 else 0,
+		error_amount: clamp(solution.error / 80, 0, 1),
+	}
+}
+
+## Write the shader values for one retained scene snapshot during rendering.
+write_scene_uniforms! : AppModel, Program.Frame => {}
+write_scene_uniforms! = |model, frame| {
+	parameters = scene_parameters(model.arm, model.target, frame.timestamp_nanos)
+	model.floor_time.set!(parameters.seconds)
+	model.floor_target_uv.set!(parameters.target_uv)
+	model.floor_reachable.set!(parameters.reachable_value)
+	model.floor_error.set!(parameters.error_amount)
+	model.robot_time.set!(parameters.seconds)
+	model.robot_reachable.set!(parameters.reachable_value)
+	model.robot_error.set!(parameters.error_amount)
+	model.composite_time.set!(parameters.seconds)
+
+	# These render-target dimensions are static. The bloom sampler is bound by the
+	# canvas composite pass immediately before it samples the bloom attachment.
+	model.blur_resolution.set!({ x: SceneRenderer.bloom_size.width.to_f32(), y: SceneRenderer.bloom_size.height.to_f32() })
+	model.composite_resolution.set!({ x: SceneCamera.view_width, y: SceneCamera.view_height })
+}
+
+## Parity fixture: the default target is reachable, has its expected floor UV,
+## and derives animation from the prepared command list's timestamp.
+expect {
+	arm = { upper_length: 132, fore_length: 118, elbow_up: False }
+	target = Physics.point(145, 145, 60)
+	initial = scene_parameters(arm, target, 0)
+	later = scene_parameters(arm, target, 2_500_000_000)
+	initial.seconds == 0
+		and later.seconds == 2.5
+		and initial.reachable_value == 1
+		and initial.error_amount < 0.001
+		and initial.target_uv.x > 0.778
+		and initial.target_uv.x < 0.779
+		and initial.target_uv.y == 0.625
+		and initial.target_uv == later.target_uv
+		and initial.reachable_value == later.reachable_value
+		and initial.error_amount == later.error_amount
+}
+
+## Parity fixture: an unreachable target keeps its raw floor UV and selects the
+## error/reachability shader branch.
+expect {
+	parameters = scene_parameters({ upper_length: 132, fore_length: 118, elbow_up: False }, Physics.point(500, 0, 0), 2_500_000_000)
+	parameters.seconds == 2.5
+		and parameters.reachable_value == 0
+		and parameters.error_amount == 1
+		and parameters.target_uv.x > 1.46
+		and parameters.target_uv.y == 0.5
+}
+
+## Parity fixture: the responsive view selects compact below 1000px; 1000px is
+## wide.
+expect is_compact_layout(999) and !is_compact_layout(1000) and !is_compact_layout(1280)
 
 decimal : F32 -> Str
 decimal = |value| match (value * 10).round_to_i64_try() {
@@ -704,7 +786,7 @@ viewport_hud = |model, solution| {
 workspace_view : AppModel, RobotArm.Solution -> View(Msg)
 workspace_view = |model, solution| {
 	camera = model.camera
-	compact = model.screen_width < 1000
+	compact = is_compact_layout(model.screen_width)
 	underlay_lines = warehouse_underlay_lines(camera)
 		.concat(robot_shadow_lines(camera, solution))
 	scene_lines = warehouse_fixture_lines(camera)
@@ -966,7 +1048,7 @@ pga_inspector = |model, solution| {
 sidebar : AppModel, RobotArm.Solution -> View(Msg)
 sidebar = |model, solution| {
 	target = model.target.coords()
-	compact = model.screen_width < 1000
+	compact = is_compact_layout(model.screen_width)
 	state_color = if solution.reachable {
 		green
 	} else {
@@ -1045,7 +1127,7 @@ sidebar = |model, solution| {
 
 header : AppModel, RobotArm.Solution -> View(Msg)
 header = |model, solution| {
-	compact = model.screen_width < 1000
+	compact = is_compact_layout(model.screen_width)
 
 	box(
 		Auto,
@@ -1143,7 +1225,7 @@ preset_button = |model, accent, label, preset| box(
 view : AppModel -> View(Msg)
 view = |model| {
 	solution = model.arm.solve(model.target)
-	compact = model.screen_width < 1000
+	compact = is_compact_layout(model.screen_width)
 
 	box(
 		Auto,
@@ -1204,24 +1286,25 @@ drag_orbit = |model, pointer| match model.orbit {
 end_orbit : AppModel -> AppModel
 end_orbit = |model| { ..model, orbit: OrbitIdle }
 
-update : AppModel, Msg -> AppModel
+update : AppModel, Msg -> Program.StepResult(AppModel, action, task)
 update = |model, msg| {
 	target = model.target.coords()
-
-	match msg {
-		AimTarget3D(x, y, z) => { ..model, target: Physics.point(x, y, z) }
-		OrbitStart(x, y) => begin_orbit(model, { x, y })
-		OrbitMove(x, y) => drag_orbit(model, { x, y })
-		OrbitEnd => end_orbit(model)
-		SetTargetX(x) => { ..model, target: Physics.point(x, target.y, target.z) }
-		SetTargetY(y) => { ..model, target: Physics.point(target.x, y, target.z) }
-		SetTargetZ(z) => { ..model, target: Physics.point(target.x, target.y, z) }
-		SetUpperLength(length) => { ..model, arm: model.arm.with_upper_length(length) }
-		SetForeLength(length) => { ..model, arm: model.arm.with_fore_length(length) }
-		SetElbowUp(elbow_up) => { ..model, arm: model.arm.with_elbow_up(elbow_up) }
-		SetShowPga(show_pga) => { ..model, show_pga }
-		SelectPose(preset) => apply_pose_preset(model, preset)
-	}
+	Program.no_work(
+		match msg {
+			AimTarget3D(x, y, z) => { ..model, target: Physics.point(x, y, z) }
+			OrbitStart(x, y) => begin_orbit(model, { x, y })
+			OrbitMove(x, y) => drag_orbit(model, { x, y })
+			OrbitEnd => end_orbit(model)
+			SetTargetX(x) => { ..model, target: Physics.point(x, target.y, target.z) }
+			SetTargetY(y) => { ..model, target: Physics.point(target.x, y, target.z) }
+			SetTargetZ(z) => { ..model, target: Physics.point(target.x, target.y, z) }
+			SetUpperLength(length) => { ..model, arm: model.arm.with_upper_length(length) }
+			SetForeLength(length) => { ..model, arm: model.arm.with_fore_length(length) }
+			SetElbowUp(elbow_up) => { ..model, arm: model.arm.with_elbow_up(elbow_up) }
+			SetShowPga(show_pga) => { ..model, show_pga }
+			SelectPose(preset) => apply_pose_preset(model, preset)
+		},
+	)
 }
 
 font_path = "examples/assets/Inter-Regular.ttf"
@@ -1244,10 +1327,11 @@ emissive_shader_path = "examples/assets/screwbot-emissive.fs"
 
 blur_shader_path = "examples/assets/screwbot-blur.fs"
 
-init! : Program.Config => Try({ model : AppModel, renderer : Render.FrameAdapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |config| {
 	font_asset = Draw.load_font!({ path: font_path, size: 32 }).map_err(|_| Exit(1))?
-	font = SceneRenderer.font(font_asset)
+	font_metrics = Text.metrics!(font_asset)
+	font = SceneRenderer.font(font_metrics)
 	crate_asset = Assets.Texture.load!(crate_texture_path).map_err(|_| Exit(1))?
 	floor_asset = Assets.Texture.load!(floor_texture_path).map_err(|_| Exit(1))?
 	wall_asset = Assets.Texture.load!(wall_texture_path).map_err(|_| Exit(1))?
@@ -1283,9 +1367,6 @@ init! = |config| {
 	composite_time = composite_shader.uniform_f32!("time").map_err(|_| Exit(1))?
 	composite_resolution = composite_shader.uniform_vec2!("resolution").map_err(|_| Exit(1))?
 	composite_bloom = composite_shader.uniform_texture!("bloomTexture").map_err(|_| Exit(1))?
-	blur_resolution.set!({ x: SceneRenderer.bloom_size.width.to_f32(), y: SceneRenderer.bloom_size.height.to_f32() })
-	composite_resolution.set!({ x: SceneCamera.view_width, y: SceneCamera.view_height })
-	composite_bloom.set!(bloom_a.texture())
 	resources = {
 		crate: crate_asset,
 		floor: floor_asset,
@@ -1326,6 +1407,8 @@ init! = |config| {
 		robot_reachable,
 		robot_error,
 		composite_time,
+		blur_resolution,
+		composite_resolution,
 		target: Physics.point(145, 145, 60),
 		arm: { upper_length: 132, fore_length: 118, elbow_up: False },
 		show_pga: True,
@@ -1334,10 +1417,11 @@ init! = |config| {
 		camera: { yaw: 0.48, pitch: 0.34 },
 		orbit: OrbitIdle,
 	}
-	Ok({ model, renderer: SceneRenderer.frame_adapter(resources) })
+	rendering = SceneRenderer.frame_adapter(resources, font_metrics)
+	Ok({ model, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 
-tc_program = Program.custom_elm_frame!({
+tc_program = Program.custom!({
 	config: {
 		..Program.default,
 		title: "Screwbot // PGA Kinematics Lab",
@@ -1354,6 +1438,10 @@ tc_program = Program.custom_elm_frame!({
 			screen_height: frame.screen.height,
 		}
 	},
+	on_step: |model, step| {
+		Program.apply_messages(model, step.messages, update)
+	},
+	before_render!: |model, frame, _draw_frame| write_scene_uniforms!(model, frame),
 	view,
 	update,
 })
@@ -1374,8 +1462,7 @@ init_for_ray! = App.init(
 ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
 ray_update = |Model.(state), step| {
 	tc_update = tc_program.update
-	tc_step = { input: { keys: step.input.keys, mouse: step.input.mouse }, window: { size: step.window.size }, time: { elapsed_seconds: step.time.elapsed_seconds, timestamp_nanos: step.time.timestamp_nanos } }
-	next = tc_update(state, tc_step)?
+	next = tc_update(state, step.fields())?
 	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
 }
 

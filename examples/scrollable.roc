@@ -24,7 +24,7 @@ Msg : []
 
 init! : Program.Config => Try({ model : {}, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |_config| {
-	rendering = RocRayRenderer.default
+	rendering = RocRayRenderer.default!({})
 	Ok({ model: {}, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 

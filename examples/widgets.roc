@@ -141,15 +141,15 @@ font_path = "examples/assets/Inter-Regular.ttf"
 init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |_config| {
 	ray_font = Draw.load_font!({ path: font_path, size: 2 * 16 }).map_err(|_| Exit(1))?
+	rendering = RocRayRenderer.with_font!(ray_font)
 	model = {
 		theme: Theme.dark,
-		font: RocRayRenderer.font(ray_font),
+		font: rendering.font,
 		slider_value: 45,
 		select_open: False,
 		select_selected: 0,
 		toggle_on: False,
 	}
-	rendering = RocRayRenderer.with_font(ray_font)
 	Ok({ model, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 

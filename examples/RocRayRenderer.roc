@@ -1,6 +1,7 @@
 ## Basic Terracotta renderer for current roc-ray frame capabilities.
 ## Resource-heavy applications can supply their own adapter, as Screwbot does.
 import rr.Draw
+import rr.Text
 
 import tc.Color
 import tc.Element
@@ -9,42 +10,31 @@ import tc.Render
 RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
 
 RocRayRenderer := [].{
-	Renderer : { measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
+	Bundle : { font : Element.Font, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
 
-	default : Renderer
-	default = renderer_for(NoRayFont)
+	default! : {} => Bundle
+	default! = |{}| {
+		default_metrics = Text.metrics!(Text.default_font)
+		renderer_for(NoRayFont, Element.default_font, default_metrics)
+	}
 
-	with_font : Draw.Font -> Renderer
-	with_font = |font| renderer_for(LoadedRayFont(font))
-
-	font : Draw.Font -> Element.Font
-	font = |_font| Element.custom_font({
-		key: 1,
-		# Layout runs in roc-ray's pure update phase, where hosted font metrics are
-		# unavailable. Keep measurement deterministic and use the loaded font only
-		# for drawing.
-		measure: approximate_text,
-		draw!: |_config| {},
-	})
-}
-
-## Spike-only deterministic metrics for layout in roc-ray's Elm architecture.
-## The current examples are predominantly ASCII; a future font-metrics asset can
-## replace this without changing Terracotta's pure measurement contract.
-approximate_text : { text : Str, size : F32, spacing : F32 } -> Render.TextSize
-approximate_text = |config| {
-	glyph_count = config.text.to_utf8().len()
-	spacing_count = if glyph_count > 0 glyph_count - 1 else 0
-	{
-		width: glyph_count.to_f32() * config.size * 0.60 + spacing_count.to_f32() * config.spacing,
-		height: config.size,
+	with_font! : Draw.Font => Bundle
+	with_font! = |font| {
+		default_metrics = Text.metrics!(Text.default_font)
+		font_metrics = Text.metrics!(font)
+		custom_font = Element.custom_font({
+			key: 1,
+			measure: |config| font_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing }),
+			draw!: |_config| {},
+		})
+		renderer_for(LoadedRayFont(font), custom_font, default_metrics)
 	}
 }
 
-renderer_for : RayFont -> RocRayRenderer.Renderer
-renderer_for = |ray_font| {
+renderer_for : RayFont, Element.Font, Text.Metrics -> RocRayRenderer.Bundle
+renderer_for = |ray_font, font, default_metrics| {
 	measure_text = |config| match config.font {
-		DefaultFont => approximate_text({ text: config.text, size: config.size, spacing: config.spacing })
+		DefaultFont => default_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
 		CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
 	}
 	renderer = Render.adapter({
@@ -54,7 +44,7 @@ renderer_for = |ray_font| {
 			frame.fps!({ pos: { x: 0, y: 0 }, size: 16, color: ray_color(Color.gray) })
 		},
 	})
-	{ measure_text, renderer }
+	{ font, measure_text, renderer }
 }
 
 ray_color : Color -> _

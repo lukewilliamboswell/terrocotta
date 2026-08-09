@@ -1,6 +1,7 @@
 ## Terracotta render-command adapter and shader pipeline for Screwbot.
 import rr.Assets
 import rr.Draw
+import rr.Text
 
 import tc.Color
 import tc.Element
@@ -9,6 +10,8 @@ import tc.Render
 import SceneCamera
 
 SceneRenderer :: [].{
+	Renderer : { measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
+
 	Resources : {
 		crate : Assets.Texture,
 		floor : Assets.Texture,
@@ -48,21 +51,15 @@ SceneRenderer :: [].{
 	robot_texture : Assets.Texture -> Element.Texture
 	robot_texture = |texture| adapt_texture(robot_texture_key, texture)
 
-	font : Draw.Font -> Element.Font
-	font = |font_value| adapt_font(font_value)
+	font : Text.Metrics -> Element.Font
+	font = |metrics| adapt_font(metrics)
 
-	frame_adapter : Resources -> Render.FrameAdapter(Draw.Frame)
-	frame_adapter = |resources| Render.frame_adapter({
-		measure_text!: |config| approximate_text({ text: config.text, size: config.size, spacing: config.spacing }),
-		render!: |frame, commands| render_commands!(frame, resources, commands),
-	})
-}
-
-approximate_text : { text : Str, size : F32, spacing : F32 } -> Render.TextSize
-approximate_text = |config| {
-	glyph_count = config.text.to_utf8().len()
-	spacing_count = if glyph_count > 0 glyph_count - 1 else 0
-	{ width: glyph_count.to_f32() * config.size * 0.60 + spacing_count.to_f32() * config.spacing, height: config.size }
+	frame_adapter : Resources, Text.Metrics -> Renderer
+	frame_adapter = |resources, metrics| {
+		measure_text = |config| metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
+		renderer = Render.adapter({ render!: |frame, commands| render_commands!(frame, resources, commands) })
+		{ measure_text, renderer }
+	}
 }
 
 CanvasDepthItem : [
@@ -94,17 +91,12 @@ adapt_texture = |key, texture_value| Element.keyed_texture({
 	draw!: |_command| {},
 })
 
-adapt_font : Draw.Font -> Element.Font
-adapt_font = |font_value| Element.custom_font({
-	key: 1,
-	measure!: |config| Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: font_value,
-	}),
-	draw!: |_config| {},
-})
+	adapt_font : Text.Metrics -> Element.Font
+	adapt_font = |metrics| Element.custom_font({
+		key: 1,
+		measure: |config| metrics.measure({ text: config.text, size: config.size, spacing: config.spacing }),
+		draw!: |_config| {},
+	})
 
 ray_color : Color -> _
 ray_color = |color| Draw.from_rgba({ r: color.r, g: color.g, b: color.b, a: color.a })
@@ -294,7 +286,7 @@ draw_render_command! = |frame, resources, command| match command {
 					scene_frame.line!({
 						start: to_target(line.start),
 						end: to_target(line.end),
-						stroke: ray_color(line.color).stroke(line.thickness * target_scale),
+						stroke: Draw.stroke(ray_color(line.color), line.thickness * target_scale),
 					})
 				}
 				scene_frame.with_blend_mode!(
@@ -335,7 +327,7 @@ draw_render_command! = |frame, resources, command| match command {
 						DepthLine(value) => scene_frame.line!({
 							start: to_target(value.start),
 							end: to_target(value.end),
-							stroke: ray_color(value.color).stroke(value.thickness * target_scale),
+							stroke: Draw.stroke(ray_color(value.color), value.thickness * target_scale),
 						})
 						DepthCircle(value) => scene_frame.circle!({
 							center: to_target(value.center),
@@ -377,7 +369,7 @@ draw_render_command! = |frame, resources, command| match command {
 									blend_frame.line!({
 										start: to_bloom(line.start),
 										end: to_bloom(line.end),
-										stroke: ray_color(line.color).stroke(line.thickness * bloom_scale),
+										stroke: Draw.stroke(ray_color(line.color), line.thickness * bloom_scale),
 									})
 								}
 								for circle in canvas_config.circles {
