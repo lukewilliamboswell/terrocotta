@@ -10,6 +10,7 @@ import tc.Render
 RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
 
 RocRayRenderer := [].{
+
 	## Startup bundle that keeps each font's pure measurement closure paired with
 	## the renderer that draws it.
 	Bundle : { font : Element.Font, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }

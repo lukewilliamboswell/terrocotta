@@ -10,7 +10,16 @@ import tc.Render
 import SceneCamera
 
 SceneRenderer :: [].{
-	Renderer : { measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
+
+	## Resource-free scene values paired with retained Screwbot commands.
+	SceneParameters : {
+		seconds : F32,
+		target_uv : { x : F32, y : F32 },
+		reachable_value : F32,
+		error_amount : F32,
+	}
+
+	Renderer : { measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, SceneParameters) }
 
 	Resources : {
 		crate : Assets.Texture,
@@ -26,7 +35,17 @@ SceneRenderer :: [].{
 		emissive_shader : Draw.Shader,
 		blur_shader : Draw.Shader,
 		composite_shader : Draw.Shader,
+		floor_time : Draw.F32Uniform,
+		floor_target_uv : Draw.Vec2Uniform,
+		floor_reachable : Draw.F32Uniform,
+		floor_error : Draw.F32Uniform,
+		robot_time : Draw.F32Uniform,
+		robot_reachable : Draw.F32Uniform,
+		robot_error : Draw.F32Uniform,
 		blur_direction : Draw.Vec2Uniform,
+		blur_resolution : Draw.Vec2Uniform,
+		composite_time : Draw.F32Uniform,
+		composite_resolution : Draw.Vec2Uniform,
 		composite_bloom : Draw.TextureUniform,
 	}
 
@@ -54,13 +73,33 @@ SceneRenderer :: [].{
 	font : Text.Metrics -> Element.Font
 	font = |metrics| adapt_font(metrics)
 
+	## Apply one retained scene snapshot while the draw capability is active.
+	write_scene_uniforms! : Resources, SceneParameters => {}
+	write_scene_uniforms! = |resources, parameters| {
+		resources.floor_time.set!(parameters.seconds)
+		resources.floor_target_uv.set!(parameters.target_uv)
+		resources.floor_reachable.set!(parameters.reachable_value)
+		resources.floor_error.set!(parameters.error_amount)
+		resources.robot_time.set!(parameters.seconds)
+		resources.robot_reachable.set!(parameters.reachable_value)
+		resources.robot_error.set!(parameters.error_amount)
+		resources.composite_time.set!(parameters.seconds)
+		resources.blur_resolution.set!({ x: SceneRenderer.bloom_size.width.to_f32(), y: SceneRenderer.bloom_size.height.to_f32() })
+		resources.composite_resolution.set!({ x: SceneCamera.view_width, y: SceneCamera.view_height })
+	}
+
 	frame_adapter : Resources, Text.Metrics -> Renderer
 	frame_adapter = |resources, default_metrics| {
 		measure_text = |config| match config.font {
 			DefaultFont => default_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
 			CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
 		}
-		renderer = Render.adapter({ render!: |frame, commands| render_commands!(frame, resources, commands) })
+		renderer = Render.adapter({
+			render!: |frame, parameters, _render_frame, commands| {
+				write_scene_uniforms!(resources, parameters)
+				render_commands!(frame, resources, commands)
+			},
+		})
 		{ measure_text, renderer }
 	}
 }
@@ -94,12 +133,12 @@ adapt_texture = |key, texture_value| Element.keyed_texture({
 	draw!: |_command| {},
 })
 
-	adapt_font : Text.Metrics -> Element.Font
-	adapt_font = |metrics| Element.custom_font({
-		key: 1,
-		measure: |config| metrics.measure({ text: config.text, size: config.size, spacing: config.spacing }),
-		draw!: |_config| {},
-	})
+adapt_font : Text.Metrics -> Element.Font
+adapt_font = |metrics| Element.custom_font({
+	key: 1,
+	measure: |config| metrics.measure({ text: config.text, size: config.size, spacing: config.spacing }),
+	draw!: |_config| {},
+})
 
 ray_color : Color -> _
 ray_color = |color| Draw.from_rgba({ r: color.r, g: color.g, b: color.b, a: color.a })

@@ -40,7 +40,7 @@ Msg : [NoOp]
 
 init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
 init! = |_config| {
-	 ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
+	ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
 	rendering = RocRayRenderer.with_font!(ray_font)
 	Ok({ model: { font: rendering.font }, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }

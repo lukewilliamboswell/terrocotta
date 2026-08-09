@@ -29,7 +29,7 @@ import SceneCamera exposing [Point2]
 import SceneRenderer
 import Warehouse exposing [Bounds3]
 
-Model :: Program.State(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame, SceneRenderer.SceneParameters)
 
 AppModel : {
 	theme : Theme,
@@ -38,16 +38,6 @@ AppModel : {
 	wall_texture : Element.Texture,
 	white_texture : Element.Texture,
 	robot_texture : Element.Texture,
-	floor_time : Draw.F32Uniform,
-	floor_target_uv : Draw.Vec2Uniform,
-	floor_reachable : Draw.F32Uniform,
-	floor_error : Draw.F32Uniform,
-	robot_time : Draw.F32Uniform,
-	robot_reachable : Draw.F32Uniform,
-	robot_error : Draw.F32Uniform,
-	composite_time : Draw.F32Uniform,
-	blur_resolution : Draw.Vec2Uniform,
-	composite_resolution : Draw.Vec2Uniform,
 	target : Physics.Point,
 	arm : RobotArm,
 	show_pga : Bool,
@@ -119,18 +109,10 @@ shadow = 0x03060d.Color
 clamp : F32, F32, F32 -> F32
 clamp = |value, lo, hi| value.min(hi).max(lo)
 
-## Scene values supplied to Screwbot's shaders with a prepared command list.
-SceneParameters : {
-	seconds : F32,
-	target_uv : { x : F32, y : F32 },
-	reachable_value : F32,
-	error_amount : F32,
-}
-
 is_compact_layout : F32 -> Bool
 is_compact_layout = |screen_width| screen_width < 1000
 
-scene_parameters : RobotArm, Physics.Point, U64 -> SceneParameters
+scene_parameters : RobotArm, Physics.Point, U64 -> SceneRenderer.SceneParameters
 scene_parameters = |arm, target_point, timestamp_nanos| {
 	solution = arm.solve(target_point)
 	target = solution.target.coords()
@@ -145,25 +127,6 @@ scene_parameters = |arm, target_point, timestamp_nanos| {
 	}
 }
 
-## Write the shader values for one retained scene snapshot during rendering.
-write_scene_uniforms! : AppModel, Program.Frame => {}
-write_scene_uniforms! = |model, frame| {
-	parameters = scene_parameters(model.arm, model.target, frame.timestamp_nanos)
-	model.floor_time.set!(parameters.seconds)
-	model.floor_target_uv.set!(parameters.target_uv)
-	model.floor_reachable.set!(parameters.reachable_value)
-	model.floor_error.set!(parameters.error_amount)
-	model.robot_time.set!(parameters.seconds)
-	model.robot_reachable.set!(parameters.reachable_value)
-	model.robot_error.set!(parameters.error_amount)
-	model.composite_time.set!(parameters.seconds)
-
-	# These render-target dimensions are static. The bloom sampler is bound by the
-	# canvas composite pass immediately before it samples the bloom attachment.
-	model.blur_resolution.set!({ x: SceneRenderer.bloom_size.width.to_f32(), y: SceneRenderer.bloom_size.height.to_f32() })
-	model.composite_resolution.set!({ x: SceneCamera.view_width, y: SceneCamera.view_height })
-}
-
 ## Parity fixture: the default target is reachable, has its expected floor UV,
 ## and derives animation from the prepared command list's timestamp.
 expect {
@@ -173,14 +136,14 @@ expect {
 	later = scene_parameters(arm, target, 2_500_000_000)
 	initial.seconds == 0
 		and later.seconds == 2.5
-		and initial.reachable_value == 1
-		and initial.error_amount < 0.001
-		and initial.target_uv.x > 0.778
-		and initial.target_uv.x < 0.779
-		and initial.target_uv.y == 0.625
-		and initial.target_uv == later.target_uv
-		and initial.reachable_value == later.reachable_value
-		and initial.error_amount == later.error_amount
+			and initial.reachable_value == 1
+				and initial.error_amount < 0.001
+					and initial.target_uv.x > 0.778
+						and initial.target_uv.x < 0.779
+							and initial.target_uv.y == 0.625
+								and initial.target_uv == later.target_uv
+									and initial.reachable_value == later.reachable_value
+										and initial.error_amount == later.error_amount
 }
 
 ## Parity fixture: an unreachable target keeps its raw floor UV and selects the
@@ -189,9 +152,9 @@ expect {
 	parameters = scene_parameters({ upper_length: 132, fore_length: 118, elbow_up: False }, Physics.point(500, 0, 0), 2_500_000_000)
 	parameters.seconds == 2.5
 		and parameters.reachable_value == 0
-		and parameters.error_amount == 1
-		and parameters.target_uv.x > 1.46
-		and parameters.target_uv.y == 0.5
+			and parameters.error_amount == 1
+				and parameters.target_uv.x > 1.46
+					and parameters.target_uv.y == 0.5
 }
 
 ## Parity fixture: the responsive view selects compact below 1000px; 1000px is
@@ -1327,7 +1290,7 @@ emissive_shader_path = "examples/assets/screwbot-emissive.fs"
 
 blur_shader_path = "examples/assets/screwbot-blur.fs"
 
-init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, SceneRenderer.SceneParameters) }, [Exit(I64)])
 init! = |config| {
 	default_font_metrics = Text.metrics!(Text.default_font)
 	font_asset = Draw.load_font!({ path: font_path, size: 32 }).map_err(|_| Exit(1))?
@@ -1382,7 +1345,17 @@ init! = |config| {
 		emissive_shader,
 		blur_shader,
 		composite_shader,
+		floor_time,
+		floor_target_uv,
+		floor_reachable,
+		floor_error,
+		robot_time,
+		robot_reachable,
+		robot_error,
 		blur_direction,
+		blur_resolution,
+		composite_time,
+		composite_resolution,
 		composite_bloom,
 	}
 	app_theme = Theme.from_seed({
@@ -1400,16 +1373,6 @@ init! = |config| {
 		wall_texture,
 		white_texture,
 		robot_texture,
-		floor_time,
-		floor_target_uv,
-		floor_reachable,
-		floor_error,
-		robot_time,
-		robot_reachable,
-		robot_error,
-		composite_time,
-		blur_resolution,
-		composite_resolution,
 		target: Physics.point(145, 145, 60),
 		arm: { upper_length: 132, fore_length: 118, elbow_up: False },
 		show_pga: True,
@@ -1442,7 +1405,7 @@ tc_program = Program.custom!({
 	on_step: |model, step| {
 		Program.apply_messages(model, step.messages, update)
 	},
-	before_render!: |model, frame, _draw_frame| write_scene_uniforms!(model, frame),
+	render_data: |model, frame| scene_parameters(model.arm, model.target, frame.timestamp_nanos),
 	view,
 	update,
 })
