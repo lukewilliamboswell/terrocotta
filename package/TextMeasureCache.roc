@@ -5,7 +5,7 @@ import Text
 TextMeasureCache :: {
 	entries : Dict(Key, Entry),
 	generation : U64,
-	measure_text! : Text.MeasureTextFn,
+	measure_text : Text.MeasureTextFn,
 }.{
 	Key : {
 		text : Str,
@@ -32,7 +32,7 @@ TextMeasureCache :: {
 	max_entries = 4096
 
 	new : Text.MeasureTextFn -> TextMeasureCache
-	new = |measure_text!| { entries: Dict.empty(), generation: 0, measure_text! }
+	new = |measure_text| { entries: Dict.empty(), generation: 0, measure_text }
 
 	next_generation : TextMeasureCache -> TextMeasureCache
 	next_generation = |cache| TextMeasureCache.prune({ ..cache, generation: cache.generation + 1 })
@@ -111,7 +111,7 @@ TextMeasureCache :: {
 		match cache.entries.get(cache_key) {
 			Ok(entry) => TextMeasureCache.refresh_hit(cache, cache_key, entry)
 			Err(_) => {
-				measured = Text.measure_canonical!(content, config, cache.measure_text!)
+				measured = Text.measure_canonical!(content, config, cache.measure_text)
 				entry = TextMeasureCache.from_canonical(measured, cache.generation)
 				({ ..cache, entries: cache.entries.insert(cache_key, entry) }, entry)
 			}
@@ -122,8 +122,8 @@ TextMeasureCache :: {
 	len = |cache| cache.entries.len()
 }
 
-test_measure_text! : Text.MeasureTextFn
-test_measure_text! = |config| {
+test_measure_text : Text.MeasureTextFn
+test_measure_text = |config| {
 	{ width: config.text.to_utf8().len().to_f32(), height: config.size }
 }
 
@@ -147,7 +147,7 @@ expect {
 	cache_key = TextMeasureCache.key("cached text", Element.default_text)
 	empty_entries = Dict.empty()
 	entries = empty_entries.insert(cache_key, test_entry)
-	cache_seed = { ..TextMeasureCache.new(test_measure_text!), entries }
+	cache_seed = { ..TextMeasureCache.new(test_measure_text), entries }
 	cache = cache_seed.next_generation()
 	cache.entries.len() == 1
 		and cache.generation == 1
@@ -158,7 +158,7 @@ expect {
 	key = TextMeasureCache.key("cached text", Element.default_text)
 	entry = { ..test_entry, generation: 4 }
 	entries = Dict.single(key, entry)
-	cache = { ..TextMeasureCache.new(test_measure_text!), entries, generation: 4 }
+	cache = { ..TextMeasureCache.new(test_measure_text), entries, generation: 4 }
 	reset_cache = cache.reset()
 	reset_cache.entries.len() == 0
 		and reset_cache.generation == 0
@@ -186,7 +186,7 @@ expect {
 expect {
 	cache_key = TextMeasureCache.key("same text", Element.default_text)
 	entries = Dict.empty().insert(cache_key, test_entry)
-	cache = { ..TextMeasureCache.new(test_measure_text!), entries, generation: 1 }
+	cache = { ..TextMeasureCache.new(test_measure_text), entries, generation: 1 }
 	(refreshed_cache, refreshed_entry) = TextMeasureCache.refresh_hit(cache, cache_key, test_entry)
 	match refreshed_cache.entries.get(cache_key) {
 		Ok(stored_entry) => refreshed_entry.generation == cache.generation
@@ -197,7 +197,7 @@ expect {
 
 ## Pure lookup returns seeded canonical measurements.
 expect {
-	cache = TextMeasureCache.new(test_measure_text!).insert("cached text", Element.default_text, test_entry)
+	cache = TextMeasureCache.new(test_measure_text).insert("cached text", Element.default_text, test_entry)
 	match cache.get("cached text", Element.default_text) {
 		Ok(entry) => entry == test_entry
 		Err(_) => Bool.False
@@ -206,7 +206,7 @@ expect {
 
 ## Pure lookup reports a missing measurement without invoking the host.
 expect {
-	cache = TextMeasureCache.new(test_measure_text!)
+	cache = TextMeasureCache.new(test_measure_text)
 	match cache.get("missing text", Element.default_text) {
 		Err(KeyNotFound) => Bool.True
 		_ => Bool.False
@@ -215,7 +215,7 @@ expect {
 
 ## Generation pruning drops entries older than the retention window.
 expect {
-	var $cache = TextMeasureCache.new(test_measure_text!)
+	var $cache = TextMeasureCache.new(test_measure_text)
 
 	# add entry
 	key = TextMeasureCache.key("old text", Element.default_text)
@@ -246,6 +246,6 @@ expect {
 		}
 		$entries = $entries.insert(cache_key, test_entry)
 	}
-	cache = { ..TextMeasureCache.new(test_measure_text!), entries: $entries }
+	cache = { ..TextMeasureCache.new(test_measure_text), entries: $entries }
 	cache.prune().entries.len() == TextMeasureCache.max_entries
 }

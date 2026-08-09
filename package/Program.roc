@@ -2,7 +2,7 @@
 ## Wires init, view, and update into the platform's { init!, render! } contract.
 ##
 ## Usage:
-##   program = Program.new!({ config, init!, view, update: update! })
+##   program = Program.new!({ config, renderer, init!, view, update })
 import Layout
 import LayoutTypes
 import Render
@@ -11,7 +11,7 @@ import Color
 import Event
 import Drag
 
-HostState(host) : {
+HostState(host, mouse) : {
 	frame_time : F32,
 	timestamp_nanos : U64,
 	screen : { width : I32, height : I32 },
@@ -28,6 +28,7 @@ HostState(host) : {
 		delta_y : F32,
 		x : F32,
 		y : F32,
+		..mouse,
 	},
 	..host,
 }
@@ -97,35 +98,14 @@ Program :: [].{
 		cursor_visible: Bool.True,
 	}
 
-	State(model, msg) :: {
+	## State for the message-driven renderer. `update` produces and retains one
+	## command list; `render!` receives the platform-owned drawing capability and
+	## only replays that list. No host capability is retained in the model.
+	State(model, msg, draw_frame) :: {
 		model : model,
+		render_snapshot : RenderSnapshot(model),
 		layout : Layout,
-		renderer : Render.Adapter,
-		hovered : List(U64),
-		focused : U64,
-		scroll : Dict(U64, ScrollState),
-		drag : Drag.DragState,
-	}
-
-	## Program state for renderers which require a platform-owned capability on
-	## every frame. The capability itself is never retained in the model.
-	FrameState(model, msg, draw_frame) :: {
-		model : model,
-		layout : Layout,
-		renderer : Render.FrameAdapter(draw_frame),
-		hovered : List(U64),
-		focused : U64,
-		scroll : Dict(U64, ScrollState),
-		drag : Drag.DragState,
-	}
-
-	## State for message-driven platforms which prepare the model before drawing.
-	## Render commands are prepared during `update` and retained, while the
-	## platform-owned drawing capability is used only by `render!`.
-	ElmFrameState(model, msg, draw_frame) :: {
-		model : model,
-		layout : Layout,
-		renderer : Render.FrameAdapter(draw_frame),
+		renderer : Render.Adapter(draw_frame),
 		commands : List(Render.Command),
 		hovered : List(U64),
 		focused : U64,
@@ -133,9 +113,21 @@ Program :: [].{
 		drag : Drag.DragState,
 	}
 
-	## The observation subset Terracotta needs from a message-driven platform
-	## step. It is structural so this package does not import a platform.
-	ElmStep(step) : {
+	## Model/frame pair associated with retained commands. `CurrentModel` avoids
+	## retaining a second ARC owner on frames with no UI event messages;
+	## `RetainedModel` owns the required pre-event model only when it differs
+	## from the next retained model.
+	RenderSnapshot(model) : [
+		CurrentModel(Frame),
+		RetainedModel({ model : model, frame : Frame }),
+	]
+
+	## The full structural step accepted by a program. Terracotta reads
+	## host observations from it but passes the complete value to `on_step`, so
+	## platform-specific observations and external messages are never projected
+	## away.
+	Step(msg, input, mouse, window, time, step) : {
+		messages : List(msg),
 		input : {
 			keys : List(U8),
 			mouse : {
@@ -150,310 +142,168 @@ Program :: [].{
 				delta_y : F32,
 				x : F32,
 				y : F32,
+				..mouse,
 			},
+			..input,
 		},
-		window : { size : { width : I32, height : I32 } },
-		time : { elapsed_seconds : F32, timestamp_nanos : U64 },
+		window : { size : { width : I32, height : I32 }, ..window },
+		time : { elapsed_seconds : F32, timestamp_nanos : U64, ..time },
 		..step,
 	}
 
+	## Result returned by a platform-step hook. Actions and tasks remain owned by
+	## the enclosing platform rather than being discarded by Terracotta.
+	StepResult(model, action, task) : {
+		model : model,
+		actions : List(action),
+		tasks : List(task),
+	}
+
+	## Fold a batch of platform messages with the application's ordinary update
+	## function. `new!` uses this for `step.messages`; custom programs can use it
+	## when they want to augment the default platform-message behavior.
+	apply_messages : m, List(msg), (m, msg -> m) -> m
+	apply_messages = |model, messages, update| {
+		var $model = model
+		for message in messages {
+			$model = update($model, message)
+		}
+		$model
+	}
+
+	## Preserve platform work returned by `on_step` while replacing only the
+	## program state prepared for this cycle.
+	step_work : StepResult(m, action, task) -> { actions : List(action), tasks : List(task) }
+	step_work = |result| { actions: result.actions, tasks: result.tasks }
+
+	## Build a message-driven program. `update`
+	## accepts the platform's full structural step, folds `step.messages` through
+	## `update`, and prepares retained commands. `render!` only replays those
+	## commands. Use `custom!` when platform-step processing needs to return
+	## actions or tasks of its own.
 	new! : {
 		config : Config,
-		renderer : Render.Adapter,
+		renderer : Render.Adapter(draw_frame),
 		init! : Config => Try(m, [Exit(I64)]),
 		view : m -> Element.View(msg),
 		update : m, msg -> m,
 	} -> {
-		init! : {
-			config : Config,
-			run! : HostState(host) => Try(State(m, msg), [Exit(I64)]),
-		},
-		render! : State(m, msg), HostState(host) => Try(State(m, msg), [Exit(I64), ..]),
+		init! : startup => Try(State(m, msg, draw_frame), [Exit(I64)]),
+		update : State(m, msg, draw_frame), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : State(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
 	}
 	new! = |{ config, renderer, init!, view, update }| Program.custom!({
 		config,
 		init!: |cfg| init!(cfg).map_ok(|model| { model, renderer }),
-		on_frame!: |model, _frame| model,
-		view,
-		update,
-	})
-
-	## Build a simple program for platforms that pass an opaque drawing
-	## capability to each render call.
-	new_frame! : {
-		config : Config,
-		renderer : Render.FrameAdapter(draw_frame),
-		init! : Config => Try(m, [Exit(I64)]),
-		view : m -> Element.View(msg),
-		update : m, msg -> m,
-	} -> {
-		init! : {
-			config : Config,
-			run! : HostState(host) => Try(FrameState(m, msg, draw_frame), [Exit(I64)]),
+		on_step: |model, step| {
+			{ model: Program.apply_messages(model, step.messages, update), actions: [], tasks: [] }
 		},
-		render! : FrameState(m, msg, draw_frame), HostState(host), draw_frame => Try(FrameState(m, msg, draw_frame), [Exit(I64), ..]),
-	}
-	new_frame! = |{ config, renderer, init!, view, update }| Program.custom_frame!({
-		config,
-		init!: |cfg| init!(cfg).map_ok(|model| { model, renderer }),
-		on_frame!: |model, _frame| model,
-		view,
-		update,
-	})
-
-	## Build a frame-capability program for an Elm-style platform. The returned
-	## `init!` initializes retained Terracotta state, `update` consumes a
-	## structural platform step and prepares commands, and `render!` only draws
-	## those commands. Empty `actions` and `tasks` let the enclosing application
-	## add platform work without coupling Terracotta to it.
-	new_elm_frame! : {
-		config : Config,
-		renderer : Render.FrameAdapter(draw_frame),
-		init! : Config => Try(m, [Exit(I64)]),
-		view : m -> Element.View(msg),
-		update : m, msg -> m,
-	} -> {
-		init! : startup => Try(ElmFrameState(m, msg, draw_frame), [Exit(I64)]),
-		update : ElmFrameState(m, msg, draw_frame), ElmStep(step) -> Try({ model : ElmFrameState(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
-		render! : ElmFrameState(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
-	}
-	new_elm_frame! = |{ config, renderer, init!, view, update }| Program.custom_elm_frame!({
-		config,
-		init!: |cfg| init!(cfg).map_ok(|model| { model, renderer }),
 		on_frame: |model, _frame| model,
+		before_render!: |_model, _frame, _draw_frame| {},
 		view,
 		update,
 	})
 
-	## Elm-style counterpart of `custom_frame!`, including retained renderer
-	## initialization and the optional per-frame model hook.
-	custom_elm_frame! : {
+	## Advanced constructor for message-driven programs. `on_step` receives the
+	## full platform step after inherited scrolling is updated and may fold,
+	## replace, or augment `step.messages`; its returned actions and tasks pass
+	## through unchanged. `on_frame` then creates the render model, layout, and
+	## retained commands. UI events update the retained `model` afterwards.
+	##
+	## `before_render!` runs immediately before replaying those retained commands
+	## with the exact pre-event model and `Frame` that produced them. It receives
+	## no platform step or task messages, so retained state remains compact.
+	custom! : {
 		config : Config,
-		init! : Config => Try({ model : m, renderer : Render.FrameAdapter(draw_frame) }, [Exit(I64)]),
+		init! : Config => Try({ model : m, renderer : Render.Adapter(draw_frame) }, [Exit(I64)]),
+		on_step : m, Step(msg, input, mouse, window, time, step) -> StepResult(m, action, task),
 		on_frame : m, Frame -> m,
+		before_render! : m, Frame, draw_frame => {},
 		view : m -> Element.View(msg),
 		update : m, msg -> m,
 	} -> {
-		init! : startup => Try(ElmFrameState(m, msg, draw_frame), [Exit(I64)]),
-		update : ElmFrameState(m, msg, draw_frame), ElmStep(step) -> Try({ model : ElmFrameState(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
-		render! : ElmFrameState(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
+		init! : startup => Try(State(m, msg, draw_frame), [Exit(I64)]),
+		update : State(m, msg, draw_frame), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : State(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
 	}
-	custom_elm_frame! = |{ config, init!, on_frame, view, update }| {
+	custom! = |{ config, init!, on_step, on_frame, before_render!, view, update }| {
 		init_state! = |_startup| {
 			initialized = init!(config)?
-			Ok(ElmFrameState.({
-				model: initialized.model,
-				layout: Layout.new_with_measure_text(approximate_text!),
-				renderer: initialized.renderer,
-				commands: [],
-				hovered: [],
-				focused: 0,
-				scroll: Dict.empty(),
-				drag: Idle,
-			}))
+			initial_frame = {
+				delta_seconds: 0,
+				timestamp_nanos: 0,
+				screen: { width: config.width.to_f32(), height: config.height.to_f32() },
+			}
+			Ok(
+				State.(
+					{
+						model: initialized.model,
+						render_snapshot: CurrentModel(initial_frame),
+						layout: Layout.new(initialized.renderer),
+						renderer: initialized.renderer,
+						commands: [],
+						hovered: [],
+						focused: 0,
+						scroll: Dict.empty(),
+						drag: Idle,
+					},
+				),
+			)
 		}
 
-		update_state = |ElmFrameState.(state), step| {
-			host = elm_host_state(step)
-			prepared = prepare_elm_frame(state, host, on_frame, view, update)?
-			Ok({ model: ElmFrameState.(prepared), actions: [], tasks: [] })
+		update_state = |State.(state), step| {
+			host = host_state(step)
+			scroll = prepare_scroll(state.layout, state.scroll, host)?
+			step_result = on_step(state.model, step)
+			frame = frame_from_host(host)
+			render_model = on_frame(step_result.model, frame)
+			prepared = prepare_frame({ ..state, model: render_model, scroll }, host, frame, view, update)?
+			next_state = State.(
+				{
+					model: prepared.model,
+					render_snapshot: prepared.render_snapshot,
+					layout: prepared.layout,
+					renderer: state.renderer,
+					commands: prepared.commands,
+					hovered: prepared.hovered,
+					focused: prepared.focused,
+					scroll: prepared.scroll,
+					drag: prepared.drag,
+				},
+			)
+			work = Program.step_work(step_result)
+			Ok({ model: next_state, actions: work.actions, tasks: work.tasks })
 		}
 
-		render_state! = |ElmFrameState.(state), draw_frame| {
-			Render.render_frame!(state.renderer, draw_frame, state.commands)
+		render_state! = |State.(state), draw_frame| {
+			match state.render_snapshot {
+				CurrentModel(frame) => before_render!(state.model, frame, draw_frame)
+				RetainedModel(snapshot) => before_render!(snapshot.model, snapshot.frame, draw_frame)
+			}
+			Render.render!(state.renderer, draw_frame, state.commands)
 			Ok({})
 		}
 
 		{ init!: init_state!, update: update_state, render!: render_state! }
 	}
-
-	## Build a program whose renderer is initialized alongside the application
-	## model and whose model can advance from host timing and screen state each
-	## frame. `on_frame!` may also update retained renderer resources such as
-	## cached shader uniforms.
-	##
-	## Use this when the renderer retains host-owned resources such as shaders or
-	## render targets. Existing applications should continue to use `new!`.
-	custom! : {
-		config : Config,
-		init! : Config => Try({ model : m, renderer : Render.Adapter }, [Exit(I64)]),
-		on_frame! : m, Frame => m,
-		view : m -> Element.View(msg),
-		update : m, msg -> m,
-	} -> {
-		init! : {
-			config : Config,
-			run! : HostState(host) => Try(State(m, msg), [Exit(I64)]),
-		},
-		render! : State(m, msg), HostState(host) => Try(State(m, msg), [Exit(I64), ..]),
-	}
-	custom! = |{ config, init!, on_frame!, view, update }| {
-		run! = |_host| {
-			initialized = init!(config)?
-			model = initialized.model
-			renderer = initialized.renderer
-			Ok(
-				State.(
-					{
-						model,
-						layout: Layout.new(renderer),
-						renderer,
-						hovered: [],
-						focused: 0,
-						scroll: Dict.empty(),
-						drag: Idle,
-					},
-				),
-			)
-		}
-
-		render! = |State.(state), host| {
-			screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
-			scroll = update_scroll_containers(state.layout, state.scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))?
-			frame = {
-				delta_seconds: host.frame_time,
-				timestamp_nanos: host.timestamp_nanos,
-				screen: { width: screen.w, height: screen.h },
-			}
-
-			var $layout = state.layout.clear()
-			var $event_bindings = Dict.empty()
-			var $model = on_frame!(state.model, frame)
-
-			for element_op in view($model) {
-				# update layout
-				($layout, node) = $layout.update!(
-					element_op,
-					|node_id| get_box_status(node_id, state.hovered, state.focused, host),
-					|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
-				).map_err(|_e| Exit(1))?
-
-				## bind events
-				$event_bindings = match node {
-					Node(node_id, Events(events)) => {
-						$event_bindings.insert(node_id, events)
-					}
-					_ => $event_bindings
-				}
-			}
-
-			# solve layout
-			$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
-
-			# event handling
-			{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
-			for message in messages {
-				$model = update($model, message)
-			}
-
-			# render layout
-			commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
-			Render.render!(state.renderer, commands)
-
-			Ok(State.({ model: $model, layout: $layout, renderer: state.renderer, hovered, focused, scroll, drag }))
-		}
-
-		{
-			init!: { config, run! },
-			render!,
-		}
-	}
-
-	## Build a program around a renderer whose drawing operations require a
-	## platform-owned per-frame capability. This mirrors `custom!`, but threads
-	## that capability only through the render call.
-	custom_frame! : {
-		config : Config,
-		init! : Config => Try({ model : m, renderer : Render.FrameAdapter(draw_frame) }, [Exit(I64)]),
-		on_frame! : m, Frame => m,
-		view : m -> Element.View(msg),
-		update : m, msg -> m,
-	} -> {
-		init! : {
-			config : Config,
-			run! : HostState(host) => Try(FrameState(m, msg, draw_frame), [Exit(I64)]),
-		},
-		render! : FrameState(m, msg, draw_frame), HostState(host), draw_frame => Try(FrameState(m, msg, draw_frame), [Exit(I64), ..]),
-	}
-	custom_frame! = |{ config, init!, on_frame!, view, update }| {
-		run! = |_host| {
-			initialized = init!(config)?
-			model = initialized.model
-			renderer = initialized.renderer
-			Ok(
-				FrameState.(
-					{
-						model,
-						layout: Layout.new_frame(renderer),
-						renderer,
-						hovered: [],
-						focused: 0,
-						scroll: Dict.empty(),
-						drag: Idle,
-					},
-				),
-			)
-		}
-
-		render! = |FrameState.(state), host, draw_frame| {
-			screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
-			scroll = update_scroll_containers(state.layout, state.scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))?
-			frame_info = {
-				delta_seconds: host.frame_time,
-				timestamp_nanos: host.timestamp_nanos,
-				screen: { width: screen.w, height: screen.h },
-			}
-
-			var $layout = state.layout.clear()
-			var $event_bindings = Dict.empty()
-			var $model = on_frame!(state.model, frame_info)
-
-			for element_op in view($model) {
-				($layout, node) = $layout.update!(
-					element_op,
-					|node_id| get_box_status(node_id, state.hovered, state.focused, host),
-					|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
-				).map_err(|_e| Exit(1))?
-
-				$event_bindings = match node {
-					Node(node_id, Events(events)) => $event_bindings.insert(node_id, events)
-					_ => $event_bindings
-				}
-			}
-
-			$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
-			{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
-			for message in messages {
-				$model = update($model, message)
-			}
-
-			commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
-			Render.render_frame!(state.renderer, draw_frame, commands)
-
-			Ok(FrameState.({ model: $model, layout: $layout, renderer: state.renderer, hovered, focused, scroll, drag }))
-		}
-
-		{
-			init!: { config, run! },
-			render!,
-		}
-	}
 }
 
-## Deterministic text metrics for the pure-update runtime. This deliberately
-## trades exact platform glyph metrics for a stable layout pass that needs no
-## drawing capability. Applications requiring exact metrics can choose sizes
-## explicitly or continue using the legacy render-driven API.
-approximate_text! : Render.MeasureTextRaw -> Render.TextSize
-approximate_text! = |config| {
-	count = Str.count_utf8_bytes(config.text)
-	glyph_width = config.size * 0.6
-	gaps = if count > 0 count - 1 else 0
-	{ width: count.to_f32() * glyph_width + gaps.to_f32() * config.spacing, height: config.size }
+FramePreparation(model) : {
+
+	## Exact snapshot paired with the retained commands. It uses the final model
+	## directly when no UI messages ran, avoiding a duplicate ARC owner.
+	render_snapshot : Program.RenderSnapshot(model),
+	model : model,
+	layout : Layout,
+	commands : List(Render.Command),
+	hovered : List(U64),
+	focused : U64,
+	scroll : Dict(U64, ScrollState),
+	drag : Drag.DragState,
 }
 
-elm_host_state : Program.ElmStep(step) -> HostState({})
-elm_host_state = |step| {
+host_state : Program.Step(msg, input, mouse, window, time, step) -> HostState({}, mouse)
+host_state = |step| {
 	frame_time: step.time.elapsed_seconds,
 	timestamp_nanos: step.time.timestamp_nanos,
 	screen: step.window.size,
@@ -461,34 +311,57 @@ elm_host_state = |step| {
 	mouse: step.input.mouse,
 }
 
-prepare_elm_frame : Program.ElmFrameState(m, msg, draw_frame), HostState(host), (m, Program.Frame -> m), (m -> Element.View(msg)), (m, msg -> m) -> Try({
-	model : m,
-	layout : Layout,
-	renderer : Render.FrameAdapter(draw_frame),
-	commands : List(Render.Command),
-	hovered : List(U64),
-	focused : U64,
-	scroll : Dict(U64, ScrollState),
-	drag : Drag.DragState,
-}, [Exit(I64), ..])
-prepare_elm_frame = |state, host, on_frame, view, update| {
+## Apply scrolling from the previous layout before any frame or platform-step
+## model work. All adapters use this first phase so a frame observes the same
+## inherited scroll ordering.
+prepare_scroll : Layout, Dict(U64, ScrollState), HostState(host, mouse) -> Try(Dict(U64, ScrollState), [Exit(I64), ..])
+prepare_scroll = |layout, scroll, host| {
+	update_scroll_containers(layout, scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))
+}
+
+## Convert host timing and screen observations into the compact `Frame` passed
+## to frame hooks and retained render snapshots.
+frame_from_host : HostState(host, mouse) -> Program.Frame
+frame_from_host = |host| {
 	screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
-	scroll = update_scroll_containers(state.layout, state.scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))?
-	frame = {
+	{
 		delta_seconds: host.frame_time,
 		timestamp_nanos: host.timestamp_nanos,
 		screen: { width: screen.w, height: screen.h },
 	}
+}
+
+## Shared layout, event, and command-preparation phase for every adapter.
+## Callers update scroll and their frame model first, then this function views
+## and solves the layout, handles UI events, and retains one command list. The
+## returned snapshot is deliberately from before UI events, exactly matching
+## the retained commands.
+prepare_frame : {
+	model : m,
+	layout : Layout,
+	hovered : List(U64),
+	focused : U64,
+	scroll : Dict(U64, ScrollState),
+	drag : Drag.DragState,
+	..state,
+},
+HostState(host, mouse),
+Program.Frame,
+(m -> Element.View(msg)),
+
+(m, msg -> m) -> Try(FramePreparation(m), [Exit(I64), ..])
+prepare_frame = |state, host, frame, view, update| {
+	screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
 
 	var $layout = state.layout.clear()
 	var $event_bindings = Dict.empty()
-	var $model = on_frame(state.model, frame)
+	var $model = state.model
 
 	for element_op in view($model) {
 		($layout, node) = $layout.update!(
 			element_op,
 			|node_id| get_box_status(node_id, state.hovered, state.focused, host),
-			|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
+			|node_id| state.scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
 		).map_err(|_e| Exit(1))?
 
 		$event_bindings = match node {
@@ -499,12 +372,24 @@ prepare_elm_frame = |state, host, on_frame, view, update| {
 
 	$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
 	{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
+	render_snapshot = render_snapshot_for_events(state.model, frame, messages)
 	for message in messages {
 		$model = update($model, message)
 	}
 
 	commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
-	Ok({ model: $model, layout: $layout, renderer: state.renderer, commands, hovered, focused, scroll, drag })
+	Ok({ render_snapshot, model: $model, layout: $layout, commands, hovered, focused, scroll: state.scroll, drag })
+}
+
+## Pair retained commands with their exact render model and frame. Empty UI
+## event batches use the final model directly, avoiding a second ARC owner.
+render_snapshot_for_events : m, Program.Frame, List(msg) -> Program.RenderSnapshot(m)
+render_snapshot_for_events = |render_model, frame, messages| {
+	if messages.len() == 0 {
+		CurrentModel(frame)
+	} else {
+		RetainedModel({ model: render_model, frame })
+	}
 }
 
 ## Return whether an overflow mode permits user scrolling.
@@ -582,7 +467,7 @@ deepest_vertical_scroll_target = |containers, hovered| {
 default_box_status : Element.BoxStatus
 default_box_status = { hovered: Bool.False, pressed: Bool.False, focused: Bool.False, disabled: Bool.False }
 
-get_box_status : U64, List(U64), U64, HostState(host) -> Element.BoxStatus
+get_box_status : U64, List(U64), U64, HostState(host, mouse) -> Element.BoxStatus
 get_box_status = |node_index, prev_hovered, focused, host| {
 	hovered = prev_hovered.contains(node_index)
 	{ hovered, pressed: hovered and host.mouse.left, focused: node_index == focused, disabled: Bool.False }
@@ -595,7 +480,7 @@ has_input_state = |states, index, mask|
 		Err(_) => Bool.False
 	}
 
-handle_events : Layout, EventBindings(msg), HostState(host), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events : Layout, EventBindings(msg), HostState(host, mouse), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
 handle_events = |layout, event_bindings, host, prev_hovered, prev_focused, drag_state| {
 	root_index = 0
 	pointer = { x: host.mouse.x, y: host.mouse.y }
@@ -630,7 +515,7 @@ handle_events = |layout, event_bindings, host, prev_hovered, prev_focused, drag_
 	Ok({ messages: $msgs, hovered, focused, drag })
 }
 
-pointer_button_state : HostState(host), U64 -> Event.PointerButtonState
+pointer_button_state : HostState(host, mouse), U64 -> Event.PointerButtonState
 pointer_button_state = |host, button| {
 	{
 		down: has_input_state(host.mouse.buttons, button, 1),
@@ -639,7 +524,7 @@ pointer_button_state = |host, button| {
 	}
 }
 
-pointer_buttons : HostState(host) -> Event.PointerButtons
+pointer_buttons : HostState(host, mouse) -> Event.PointerButtons
 pointer_buttons = |host| {
 	{
 		left: pointer_button_state(host, 0),
@@ -648,7 +533,7 @@ pointer_buttons = |host| {
 	}
 }
 
-pointer_event : Layout, U64, HostState(host) -> Try(Event.PointerEvent, Layout.LayoutError)
+pointer_event : Layout, U64, HostState(host, mouse) -> Try(Event.PointerEvent, Layout.LayoutError)
 pointer_event = |layout, node_id, host| {
 	Ok({
 		position: { x: host.mouse.x, y: host.mouse.y },
@@ -734,7 +619,7 @@ get_hover_events = |bindings, hovered| {
 		)
 }
 
-get_pointer_events : Layout, EventBindings(msg), List(U64), HostState(host) -> Try(List(msg), Layout.LayoutError)
+get_pointer_events : Layout, EventBindings(msg), List(U64), HostState(host, mouse) -> Try(List(msg), Layout.LayoutError)
 get_pointer_events = |layout, bindings, hovered, host| {
 	var $msgs = []
 	for node_index in hovered {
@@ -860,4 +745,23 @@ expect {
 			.insert(2, [OnPointerLeave("leave-two")])
 
 	get_pointer_leave_events(bindings, [2, 1], [1]) == ["leave-two"]
+}
+
+## Default platform messages fold in arrival order before frame preparation.
+expect Program.apply_messages(3, [4, 5], |model, message| model + message) == 12
+
+## Custom step work remains attached to the enclosing platform result.
+expect Program.step_work({ model: "ignored", actions: ["first", "second"], tasks: [7] }) == {
+	actions: ["first", "second"],
+	tasks: [7],
+}
+
+## A retained pre-event model is needed only when UI events run after commands
+## are prepared; no-event frames keep one model owner.
+expect {
+	frame : Program.Frame
+	frame = { delta_seconds: 0.25, timestamp_nanos: 42, screen: { width: 640, height: 480 } }
+
+	render_snapshot_for_events(8, frame, []) == CurrentModel(frame)
+		and render_snapshot_for_events(8, frame, ["ui-message"]) == RetainedModel({ model: 8, frame })
 }

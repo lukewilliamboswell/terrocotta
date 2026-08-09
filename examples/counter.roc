@@ -19,7 +19,7 @@ import RocRayRenderer
 
 theme = Theme.dark
 
-Model :: Program.ElmFrameState(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame)
 
 AppModel : {
 	count : I32,
@@ -71,7 +71,7 @@ view = |model| {
 config : Program.Config
 config = { ..Program.default, title: "Counter Example", width: 640, height: 420 }
 
-tc_program = Program.new_elm_frame!({
+tc_program = Program.new!({
 	config,
 	renderer: RocRayRenderer.default,
 	init!,
@@ -82,8 +82,7 @@ tc_program = Program.new_elm_frame!({
 ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
 ray_update = |Model.(state), step| {
 	tc_update = tc_program.update
-	tc_step = { input: { keys: step.input.keys, mouse: step.input.mouse }, window: { size: step.window.size }, time: { elapsed_seconds: step.time.elapsed_seconds, timestamp_nanos: step.time.timestamp_nanos } }
-	next = tc_update(state, tc_step)?
+	next = tc_update(state, step.fields())?
 	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
 }
 
@@ -94,10 +93,13 @@ ray_render! = |Model.(state), frame| {
 }
 
 program = {
-	init!: App.init(RocRayApp.config(config), |startup| {
-		tc_init! = tc_program.init!
-		tc_init!(startup).map_ok(|state| Model.(state))
-	}),
+	init!: App.init(
+		RocRayApp.config(config),
+		|startup| {
+			tc_init! = tc_program.init!
+			tc_init!(startup).map_ok(|state| Model.(state))
+		},
+	),
 	update: ray_update,
 	render!: ray_render!,
 }

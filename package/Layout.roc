@@ -47,11 +47,11 @@ Layout :: {
 	## This keeps headless layout tests and alternate renderers independent of a
 	## platform host ability.
 	new_with_measure_text : MeasureTextFn -> Layout
-	new_with_measure_text = |measure_text!| {
+	new_with_measure_text = |measure_text| {
 		nodes: [],
 		text_contents: [],
 		text_lines: [],
-		text_cache: TextMeasureCache.new(measure_text!),
+		text_cache: TextMeasureCache.new(measure_text),
 		child_indices: [],
 		pending_children: [],
 		node_ids: Dict.empty(),
@@ -59,51 +59,28 @@ Layout :: {
 		stack: Stack.new(),
 	}
 
-	## Create an empty layout using the application's text measurement adapter.
-	new : Render.Adapter -> Layout
+	## Create an empty layout using the application's renderer adapter. Text
+	## measurement remains available while commands are prepared.
+	new : Render.Adapter(frame) -> Layout
 	new = |adapter| {
-		measure_text! = |config| Render.measure_text!(adapter, config)
-		Layout.new_with_measure_text(measure_text!)
-	}
-
-	## Create an empty layout from a renderer whose drawing requires a per-frame
-	## capability. Text measurement itself remains available during layout.
-	new_frame : Render.FrameAdapter(frame) -> Layout
-	new_frame = |adapter| {
-		measure_text! = |config| Render.measure_frame_text!(adapter, config)
-		Layout.new_with_measure_text(measure_text!)
+		measure_text = |config| Render.measure_text(adapter, config)
+		Layout.new_with_measure_text(measure_text)
 	}
 
 	## Create empty Layout with capacity reserved for internal builder lists.
-	with_capacity : U64, Render.Adapter -> Layout
+	with_capacity : U64, Render.Adapter(frame) -> Layout
 	with_capacity = |capacity, adapter| {
-		measure_text! = |config| Render.measure_text!(adapter, config)
+		measure_text = |config| Render.measure_text(adapter, config)
 		{
 			nodes: List.with_capacity(capacity),
 			text_contents: List.with_capacity(capacity // 2),
 			text_lines: List.with_capacity(capacity),
-			text_cache: TextMeasureCache.new(measure_text!),
+			text_cache: TextMeasureCache.new(measure_text),
 			child_indices: List.with_capacity(capacity // 2),
 			pending_children: List.with_capacity(capacity // 2),
 			node_ids: Dict.empty(),
 			root_indices: List.with_capacity(8),
 			stack: Stack.with_capacity(capacity // 2),
-		}
-	}
-
-	with_frame_capacity : U64, Render.FrameAdapter(frame) -> Layout
-	with_frame_capacity = |capacity, adapter| {
-		measure_text! = |config| Render.measure_frame_text!(adapter, config)
-		{
-			nodes: List.with_capacity(capacity),
-			text_contents: List.with_capacity(capacity // 2),
-			text_lines: List.with_capacity(capacity),
-			text_cache: TextMeasureCache.new(measure_text!),
-			child_indices: List.with_capacity(capacity // 2),
-			pending_children: List.with_capacity(capacity // 2),
-			node_ids: Dict.empty(),
-			root_indices: List.with_capacity(8),
-			stack: Stack.with_capacity(capacity),
 		}
 	}
 
@@ -389,12 +366,12 @@ root_text_config = { ..Element.default_text, font: resolve_font(Element.default_
 ## Deterministic constructor for pure structural layout tests.
 test_layout : () -> Layout
 test_layout = || {
-	measure_text! = |config| {
+	measure_text = |config| {
 		len = config.text.to_utf8().len().to_f32()
 		gaps = F32.max(0, len - 1)
 		{ width: len * config.size + gaps * config.spacing, height: config.size }
 	}
-	Layout.new_with_measure_text(measure_text!)
+	Layout.new_with_measure_text(measure_text)
 }
 
 resolve_box_text : Layout, Element.TextStyle -> Element.TextConfig

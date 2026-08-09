@@ -149,15 +149,10 @@ RenderMeasureTextRaw : {
 
 RenderTextSize : { width : F32, height : F32 }
 
-RenderAdapter : {
-	measure_text! : RenderMeasureTextRaw -> RenderTextSize,
-	render! : List(RenderCommandRaw) => {},
-}
-
 ## Renderer whose draw callback receives a platform-owned per-frame capability.
 ## Measurement remains capability-free so layouts can cache it between frames.
-FrameRenderAdapter(frame) : {
-	measure_text! : RenderMeasureTextRaw -> RenderTextSize,
+RenderAdapter(frame) : {
+	measure_text : RenderMeasureTextRaw -> RenderTextSize,
 	render! : frame, List(RenderCommandRaw) => {},
 }
 
@@ -178,8 +173,7 @@ Render := [].{
 	ShadowRaw : RenderShadowRaw
 	MeasureTextRaw : RenderMeasureTextRaw
 	TextSize : RenderTextSize
-	Adapter : RenderAdapter
-	FrameAdapter(frame) : FrameRenderAdapter(frame)
+	Adapter(frame) : RenderAdapter(frame)
 
 	wrap : RenderCommandRaw -> Command
 	wrap = |value| value
@@ -272,42 +266,23 @@ Render := [].{
 	raw : Command -> RenderCommandRaw
 	raw = |value| value
 
-	adapter : RenderAdapter -> Adapter
+	adapter : RenderAdapter(frame) -> Adapter(frame)
 	adapter = |value| value
 
-	frame_adapter : FrameRenderAdapter(frame) -> FrameAdapter(frame)
-	frame_adapter = |value| value
-
-	measure_text! : Adapter, MeasureTextRaw -> TextSize
-	measure_text! = |adapter_value, config| {
-		raw_adapter : RenderAdapter
+	measure_text : Adapter(frame), MeasureTextRaw -> TextSize
+	measure_text = |adapter_value, config| {
+		raw_adapter : RenderAdapter(frame)
 		raw_adapter = adapter_value
-		measure! = raw_adapter.measure_text!
-		measure!(config)
+		measure = raw_adapter.measure_text
+		measure(config)
 	}
 
-	render! : Adapter, List(Command) => {}
-	render! = |adapter_value, commands| {
-		raw_adapter : RenderAdapter
+	render! : Adapter(frame), frame, List(Command) => {}
+	render! = |adapter_value, frame_value, commands| {
+		raw_adapter : RenderAdapter(frame)
 		raw_adapter = adapter_value
 		render_commands! = raw_adapter.render!
-		render_commands!(commands.map(|command_value| Render.raw(command_value)))
-	}
-
-	measure_frame_text! : FrameAdapter(frame), MeasureTextRaw -> TextSize
-	measure_frame_text! = |adapter_value, config| {
-		raw_adapter : FrameRenderAdapter(frame)
-		raw_adapter = adapter_value
-		measure! = raw_adapter.measure_text!
-		measure!(config)
-	}
-
-	render_frame! : FrameAdapter(frame), frame, List(Command) => {}
-	render_frame! = |adapter_value, frame_value, commands| {
-		raw_adapter : FrameRenderAdapter(frame)
-		raw_adapter = adapter_value
-		render_commands! = raw_adapter.render!
-		render_commands!(frame_value, commands.map(|command_value| Render.raw(command_value)))
+		render_commands!(frame_value, commands)
 	}
 
 	intersect : Rect, Rect -> Rect

@@ -1,10 +1,10 @@
 ## Bridge Terracotta's platform-independent startup settings to current roc-ray.
 import rr.App
 
-import tc.Program
+import tc.Program as TcProgram
 
 RocRayApp := [].{
-	config : Program.Config -> App.Config
+	config : TcProgram.Config -> App.Config
 	config = |config| {
 		pacing = if config.vsync {
 			VSync

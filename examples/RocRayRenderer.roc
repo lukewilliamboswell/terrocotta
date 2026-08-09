@@ -9,11 +9,11 @@ import tc.Render
 RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
 
 RocRayRenderer := [].{
-	default : Render.FrameAdapter(Draw.Frame)
-	default = frame_adapter_for(NoRayFont)
+	default : Render.Adapter(Draw.Frame)
+	default = adapter_for(NoRayFont)
 
-	with_font : Draw.Font -> Render.FrameAdapter(Draw.Frame)
-	with_font = |font| frame_adapter_for(LoadedRayFont(font))
+	with_font : Draw.Font -> Render.Adapter(Draw.Frame)
+	with_font = |font| adapter_for(LoadedRayFont(font))
 
 	font : Draw.Font -> Element.Font
 	font = |_font| Element.custom_font({
@@ -39,9 +39,9 @@ approximate_text = |config| {
 	}
 }
 
-frame_adapter_for : RayFont -> Render.FrameAdapter(Draw.Frame)
-frame_adapter_for = |ray_font| Render.frame_adapter({
-	measure_text!: |config| match config.font {
+adapter_for : RayFont -> Render.Adapter(Draw.Frame)
+adapter_for = |ray_font| Render.adapter({
+	measure_text: |config| match config.font {
 		DefaultFont => approximate_text({ text: config.text, size: config.size, spacing: config.spacing })
 		CustomFont(resource) => match ray_font {
 			NoRayFont => Element.measure_font!(resource, { text: config.text, size: config.size, spacing: config.spacing })

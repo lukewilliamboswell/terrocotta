@@ -30,7 +30,7 @@ newline_lorem = "Lorem ipsum dolor sit amet.\nInteger non sem vitae lacus.\nDone
 none_lorem : Str
 none_lorem = "Short raw line."
 
-Model :: Program.ElmFrameState(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame)
 
 AppModel : {
 	font : Font,
@@ -38,7 +38,7 @@ AppModel : {
 
 Msg : [NoOp]
 
-init! : Program.Config => Try({ model : AppModel, renderer : Render.FrameAdapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |_config| {
 	ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
 	Ok({
@@ -136,10 +136,14 @@ view = |model| {
 config : Program.Config
 config = { ..Program.default, title: "Text Wrap Example", width: 800, height: 600, resizable: Bool.True }
 
-tc_program = Program.custom_elm_frame!({
+tc_program = Program.custom!({
 	config,
 	init!,
+	on_step: |model, step| {
+		{ model: Program.apply_messages(model, step.messages, update), actions: [], tasks: [] }
+	},
 	on_frame: |model, _frame| model,
+	before_render!: |_model, _frame, _draw_frame| {},
 	view,
 	update,
 })
@@ -147,8 +151,7 @@ tc_program = Program.custom_elm_frame!({
 ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
 ray_update = |Model.(state), step| {
 	tc_update = tc_program.update
-	tc_step = { input: { keys: step.input.keys, mouse: step.input.mouse }, window: { size: step.window.size }, time: { elapsed_seconds: step.time.elapsed_seconds, timestamp_nanos: step.time.timestamp_nanos } }
-	next = tc_update(state, tc_step)?
+	next = tc_update(state, step.fields())?
 	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
 }
 
@@ -159,10 +162,13 @@ ray_render! = |Model.(state), frame| {
 }
 
 program = {
-	init!: App.init(RocRayApp.config(config), |startup| {
-		tc_init! = tc_program.init!
-		tc_init!(startup).map_ok(|state| Model.(state))
-	}),
+	init!: App.init(
+		RocRayApp.config(config),
+		|startup| {
+			tc_init! = tc_program.init!
+			tc_init!(startup).map_ok(|state| Model.(state))
+		},
+	),
 	update: ray_update,
 	render!: ray_render!,
 }
