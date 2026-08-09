@@ -119,6 +119,44 @@ Program :: [].{
 		drag : Drag.DragState,
 	}
 
+	## State for message-driven platforms which prepare the model before drawing.
+	## Render commands are prepared during `update` and retained, while the
+	## platform-owned drawing capability is used only by `render!`.
+	ElmFrameState(model, msg, draw_frame) :: {
+		model : model,
+		layout : Layout,
+		renderer : Render.FrameAdapter(draw_frame),
+		commands : List(Render.Command),
+		hovered : List(U64),
+		focused : U64,
+		scroll : Dict(U64, ScrollState),
+		drag : Drag.DragState,
+	}
+
+	## The observation subset Terracotta needs from a message-driven platform
+	## step. It is structural so this package does not import a platform.
+	ElmStep(step) : {
+		input : {
+			keys : List(U8),
+			mouse : {
+				buttons : List(U8),
+				left : Bool,
+				middle : Bool,
+				right : Bool,
+				wheel : F32,
+				wheel_x : F32,
+				wheel_y : F32,
+				delta_x : F32,
+				delta_y : F32,
+				x : F32,
+				y : F32,
+			},
+		},
+		window : { size : { width : I32, height : I32 } },
+		time : { elapsed_seconds : F32, timestamp_nanos : U64 },
+		..step,
+	}
+
 	new! : {
 		config : Config,
 		renderer : Render.Adapter,
@@ -162,6 +200,72 @@ Program :: [].{
 		view,
 		update,
 	})
+
+	## Build a frame-capability program for an Elm-style platform. The returned
+	## `init!` initializes retained Terracotta state, `update` consumes a
+	## structural platform step and prepares commands, and `render!` only draws
+	## those commands. Empty `actions` and `tasks` let the enclosing application
+	## add platform work without coupling Terracotta to it.
+	new_elm_frame! : {
+		config : Config,
+		renderer : Render.FrameAdapter(draw_frame),
+		init! : Config => Try(m, [Exit(I64)]),
+		view : m -> Element.View(msg),
+		update : m, msg -> m,
+	} -> {
+		init! : startup => Try(ElmFrameState(m, msg, draw_frame), [Exit(I64)]),
+		update : ElmFrameState(m, msg, draw_frame), ElmStep(step) -> Try({ model : ElmFrameState(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : ElmFrameState(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
+	}
+	new_elm_frame! = |{ config, renderer, init!, view, update }| Program.custom_elm_frame!({
+		config,
+		init!: |cfg| init!(cfg).map_ok(|model| { model, renderer }),
+		on_frame: |model, _frame| model,
+		view,
+		update,
+	})
+
+	## Elm-style counterpart of `custom_frame!`, including retained renderer
+	## initialization and the optional per-frame model hook.
+	custom_elm_frame! : {
+		config : Config,
+		init! : Config => Try({ model : m, renderer : Render.FrameAdapter(draw_frame) }, [Exit(I64)]),
+		on_frame : m, Frame -> m,
+		view : m -> Element.View(msg),
+		update : m, msg -> m,
+	} -> {
+		init! : startup => Try(ElmFrameState(m, msg, draw_frame), [Exit(I64)]),
+		update : ElmFrameState(m, msg, draw_frame), ElmStep(step) -> Try({ model : ElmFrameState(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : ElmFrameState(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
+	}
+	custom_elm_frame! = |{ config, init!, on_frame, view, update }| {
+		init_state! = |_startup| {
+			initialized = init!(config)?
+			Ok(ElmFrameState.({
+				model: initialized.model,
+				layout: Layout.new_with_measure_text(approximate_text!),
+				renderer: initialized.renderer,
+				commands: [],
+				hovered: [],
+				focused: 0,
+				scroll: Dict.empty(),
+				drag: Idle,
+			}))
+		}
+
+		update_state = |ElmFrameState.(state), step| {
+			host = elm_host_state(step)
+			prepared = prepare_elm_frame(state, host, on_frame, view, update)?
+			Ok({ model: ElmFrameState.(prepared), actions: [], tasks: [] })
+		}
+
+		render_state! = |ElmFrameState.(state), draw_frame| {
+			Render.render_frame!(state.renderer, draw_frame, state.commands)
+			Ok({})
+		}
+
+		{ init!: init_state!, update: update_state, render!: render_state! }
+	}
 
 	## Build a program whose renderer is initialized alongside the application
 	## model and whose model can advance from host timing and screen state each
@@ -334,6 +438,73 @@ Program :: [].{
 			render!,
 		}
 	}
+}
+
+## Deterministic text metrics for the pure-update runtime. This deliberately
+## trades exact platform glyph metrics for a stable layout pass that needs no
+## drawing capability. Applications requiring exact metrics can choose sizes
+## explicitly or continue using the legacy render-driven API.
+approximate_text! : Render.MeasureTextRaw -> Render.TextSize
+approximate_text! = |config| {
+	count = Str.count_utf8_bytes(config.text)
+	glyph_width = config.size * 0.6
+	gaps = if count > 0 count - 1 else 0
+	{ width: count.to_f32() * glyph_width + gaps.to_f32() * config.spacing, height: config.size }
+}
+
+elm_host_state : Program.ElmStep(step) -> HostState({})
+elm_host_state = |step| {
+	frame_time: step.time.elapsed_seconds,
+	timestamp_nanos: step.time.timestamp_nanos,
+	screen: step.window.size,
+	keys: step.input.keys,
+	mouse: step.input.mouse,
+}
+
+prepare_elm_frame : Program.ElmFrameState(m, msg, draw_frame), HostState(host), (m, Program.Frame -> m), (m -> Element.View(msg)), (m, msg -> m) -> Try({
+	model : m,
+	layout : Layout,
+	renderer : Render.FrameAdapter(draw_frame),
+	commands : List(Render.Command),
+	hovered : List(U64),
+	focused : U64,
+	scroll : Dict(U64, ScrollState),
+	drag : Drag.DragState,
+}, [Exit(I64), ..])
+prepare_elm_frame = |state, host, on_frame, view, update| {
+	screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
+	scroll = update_scroll_containers(state.layout, state.scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))?
+	frame = {
+		delta_seconds: host.frame_time,
+		timestamp_nanos: host.timestamp_nanos,
+		screen: { width: screen.w, height: screen.h },
+	}
+
+	var $layout = state.layout.clear()
+	var $event_bindings = Dict.empty()
+	var $model = on_frame(state.model, frame)
+
+	for element_op in view($model) {
+		($layout, node) = $layout.update!(
+			element_op,
+			|node_id| get_box_status(node_id, state.hovered, state.focused, host),
+			|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
+		).map_err(|_e| Exit(1))?
+
+		$event_bindings = match node {
+			Node(node_id, Events(events)) => $event_bindings.insert(node_id, events)
+			_ => $event_bindings
+		}
+	}
+
+	$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
+	{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
+	for message in messages {
+		$model = update($model, message)
+	}
+
+	commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
+	Ok({ model: $model, layout: $layout, renderer: state.renderer, commands, hovered, focused, scroll, drag })
 }
 
 ## Return whether an overflow mode permits user scrolling.

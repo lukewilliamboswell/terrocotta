@@ -4,14 +4,14 @@
 ## the mechanism as roc-ray 3D PGA points, lines, a plane, and a translation
 ## motor. Terracotta renders the projected geometry and exposes its live PGA
 ## coefficients as a small inspection console.
-app [Model, program] {
-	rr: platform "../../../roc-ray/platform/main.roc",
+app [Model, Msg, program] {
+	rr: platform "../../../roc-ray-elm/platform/main.roc",
 	tc: "../../package/main.roc",
 }
 
 import rr.App
 import rr.Draw
-import rr.Host
+import rr.Program as RayProgram
 import rr.Physics
 import rr.Assets
 
@@ -28,7 +28,7 @@ import SceneCamera exposing [Point2]
 import SceneRenderer
 import Warehouse exposing [Bounds3]
 
-Model :: Program.FrameState(AppModel, Msg, Draw.Frame)
+Model :: Program.ElmFrameState(AppModel, Msg, Draw.Frame)
 
 AppModel : {
 	theme : Theme,
@@ -1337,7 +1337,7 @@ init! = |config| {
 	Ok({ model, renderer: SceneRenderer.frame_adapter(resources) })
 }
 
-tc_program = Program.custom_frame!({
+tc_program = Program.custom_elm_frame!({
 	config: {
 		..Program.default,
 		title: "Screwbot // PGA Kinematics Lab",
@@ -1347,24 +1347,7 @@ tc_program = Program.custom_frame!({
 		vsync: False,
 	},
 	init!,
-	on_frame!: |model, frame| {
-		seconds = frame.timestamp_nanos.to_f32() / 1_000_000_000
-		solution = model.arm.solve(model.target)
-		target = solution.target.coords()
-		target_uv = {
-			x: (target.x - Warehouse.layout.min_x) / (Warehouse.layout.max_x - Warehouse.layout.min_x),
-			y: (target.z - Warehouse.layout.min_z) / (Warehouse.layout.max_z - Warehouse.layout.min_z),
-		}
-		reachable_value = if solution.reachable 1 else 0
-		error_amount = clamp(solution.error / 80, 0, 1)
-		model.floor_time.set!(seconds)
-		model.floor_target_uv.set!(target_uv)
-		model.floor_reachable.set!(reachable_value)
-		model.floor_error.set!(error_amount)
-		model.robot_time.set!(seconds)
-		model.robot_reachable.set!(reachable_value)
-		model.robot_error.set!(error_amount)
-		model.composite_time.set!(seconds)
+	on_frame: |model, frame| {
 		{
 			..model,
 			screen_width: frame.screen.width,
@@ -1382,19 +1365,28 @@ init_for_ray! = App.init(
 		.with_size({ width: 1280, height: 900 })
 		.with_frame_pacing(Capped(120))
 		.with_resizable(True),
-	|host| {
-		tc_run! = tc_program.init!.run!
-		tc_run!(host).map_ok(|state| Model.(state))
+	|startup| {
+		tc_init! = tc_program.init!
+		tc_init!(startup).map_ok(|state| Model.(state))
 	},
 )
 
-render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..])
-render! = |Model.(state), host, frame| {
+ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
+ray_update = |Model.(state), step| {
+	tc_update = tc_program.update
+	tc_step = { input: { keys: step.input.keys, mouse: step.input.mouse }, window: { size: step.window.size }, time: { elapsed_seconds: step.time.elapsed_seconds, timestamp_nanos: step.time.timestamp_nanos } }
+	next = tc_update(state, tc_step)?
+	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
+}
+
+render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
+render! = |Model.(state), frame| {
 	tc_render! = tc_program.render!
-	tc_render!(state, host, frame).map_ok(|next_state| Model.(next_state))
+	tc_render!(state, frame)
 }
 
 program = {
 	init!: init_for_ray!,
+	update: ray_update,
 	render!,
 }

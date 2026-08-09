@@ -1,12 +1,12 @@
 ## Minimal counter with increment and decrement buttons.
-app [Model, program] {
-	rr: platform "../../roc-ray/platform/main.roc",
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray-elm/platform/main.roc",
 	tc: "../package/main.roc",
 }
 
 import rr.App
-import rr.Host
 import rr.Draw
+import rr.Program as RayProgram
 
 import tc.Color
 import tc.Element exposing [box, text, View, style, default_font]
@@ -19,7 +19,7 @@ import RocRayRenderer
 
 theme = Theme.dark
 
-Model : Program.FrameState(AppModel, Msg, Draw.Frame)
+Model :: Program.ElmFrameState(AppModel, Msg, Draw.Frame)
 
 AppModel : {
 	count : I32,
@@ -71,7 +71,7 @@ view = |model| {
 config : Program.Config
 config = { ..Program.default, title: "Counter Example", width: 640, height: 420 }
 
-tc_program = Program.new_frame!({
+tc_program = Program.new_elm_frame!({
 	config,
 	renderer: RocRayRenderer.default,
 	init!,
@@ -79,7 +79,25 @@ tc_program = Program.new_frame!({
 	update,
 })
 
+ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
+ray_update = |Model.(state), step| {
+	tc_update = tc_program.update
+	tc_step = { input: { keys: step.input.keys, mouse: step.input.mouse }, window: { size: step.window.size }, time: { elapsed_seconds: step.time.elapsed_seconds, timestamp_nanos: step.time.timestamp_nanos } }
+	next = tc_update(state, tc_step)?
+	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
+}
+
+ray_render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
+ray_render! = |Model.(state), frame| {
+	tc_render! = tc_program.render!
+	tc_render!(state, frame)
+}
+
 program = {
-	init!: App.init(RocRayApp.config(config), |host| (tc_program.init!.run!)(host)),
-	render!: |model, host, frame| (tc_program.render!)(model, host, frame),
+	init!: App.init(RocRayApp.config(config), |startup| {
+		tc_init! = tc_program.init!
+		tc_init!(startup).map_ok(|state| Model.(state))
+	}),
+	update: ray_update,
+	render!: ray_render!,
 }

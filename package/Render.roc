@@ -150,14 +150,14 @@ RenderMeasureTextRaw : {
 RenderTextSize : { width : F32, height : F32 }
 
 RenderAdapter : {
-	measure_text! : RenderMeasureTextRaw => RenderTextSize,
+	measure_text! : RenderMeasureTextRaw -> RenderTextSize,
 	render! : List(RenderCommandRaw) => {},
 }
 
 ## Renderer whose draw callback receives a platform-owned per-frame capability.
 ## Measurement remains capability-free so layouts can cache it between frames.
 FrameRenderAdapter(frame) : {
-	measure_text! : RenderMeasureTextRaw => RenderTextSize,
+	measure_text! : RenderMeasureTextRaw -> RenderTextSize,
 	render! : frame, List(RenderCommandRaw) => {},
 }
 
@@ -278,7 +278,7 @@ Render := [].{
 	frame_adapter : FrameRenderAdapter(frame) -> FrameAdapter(frame)
 	frame_adapter = |value| value
 
-	measure_text! : Adapter, MeasureTextRaw => TextSize
+	measure_text! : Adapter, MeasureTextRaw -> TextSize
 	measure_text! = |adapter_value, config| {
 		raw_adapter : RenderAdapter
 		raw_adapter = adapter_value
@@ -294,7 +294,7 @@ Render := [].{
 		render_commands!(commands.map(|command_value| Render.raw(command_value)))
 	}
 
-	measure_frame_text! : FrameAdapter(frame), MeasureTextRaw => TextSize
+	measure_frame_text! : FrameAdapter(frame), MeasureTextRaw -> TextSize
 	measure_frame_text! = |adapter_value, config| {
 		raw_adapter : FrameRenderAdapter(frame)
 		raw_adapter = adapter_value

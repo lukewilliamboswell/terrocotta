@@ -37,9 +37,9 @@ Text := [].{
 		contains_newlines : Bool,
 	}
 
-	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : Element.Font } => Render.TextSize
+	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : Element.Font } -> Render.TextSize
 
-	measure! : Str, Element.TextConfig, MeasureTextFn => Measured
+	measure! : Str, Element.TextConfig, MeasureTextFn -> Measured
 	measure! = |content, config, measure_text!| {
 		measured = measure_canonical!(content, config, measure_text!)
 		line_h = apply_line_height(config, measured.natural_line_height)
@@ -63,7 +63,7 @@ Text := [].{
 		}
 	}
 
-	measure_canonical! : Str, Element.TextConfig, MeasureTextFn => CanonicalMeasured
+	measure_canonical! : Str, Element.TextConfig, MeasureTextFn -> CanonicalMeasured
 	measure_canonical! = |content, config, measure_text!| {
 		space_raw = measure_raw!(measure_text!, config, " ")
 		space_width = space_raw.width
@@ -108,7 +108,7 @@ Text := [].{
 	}
 }
 
-measure_raw! : Text.MeasureTextFn, Element.TextConfig, Str => Render.TextSize
+measure_raw! : Text.MeasureTextFn, Element.TextConfig, Str -> Render.TextSize
 measure_raw! = |measure_text!, config, content| {
 	measure_text!({
 		text: content,
@@ -118,7 +118,7 @@ measure_raw! = |measure_text!, config, content| {
 	})
 }
 
-measure_line_height! : Str, Element.TextConfig, Text.MeasureTextFn => F32
+measure_line_height! : Str, Element.TextConfig, Text.MeasureTextFn -> F32
 measure_line_height! = |content, config, measure_text!| {
 	sample = if bytes_len(content) > 0 "M" else " "
 	(measure_raw!(measure_text!, config, sample)).height
@@ -136,7 +136,7 @@ slice = |content, start, len| {
 max_f32 : F32, F32 -> F32
 max_f32 = |a, b| if a > b a else b
 
-measure_run! : Str, U64, U64, F32, U64, Element.TextConfig, Text.MeasureTextFn => { word : Text.Word, trimmed_width : F32 }
+measure_run! : Str, U64, U64, F32, U64, Element.TextConfig, Text.MeasureTextFn -> { word : Text.Word, trimmed_width : F32 }
 measure_run! = |content, start, len, extra_width, trailing_len, config, measure_text!| {
 	text = slice(content, start, len)
 	raw = measure_raw!(measure_text!, config, text)
@@ -147,7 +147,7 @@ measure_run! = |content, start, len, extra_width, trailing_len, config, measure_
 newline_word : U64 -> Text.Word
 newline_word = |start| { start, len: 1, width: 0, is_newline: Bool.True }
 
-measure_words! : Str, Element.TextConfig, F32, Text.MeasureTextFn => Text.CanonicalMeasured
+measure_words! : Str, Element.TextConfig, F32, Text.MeasureTextFn -> Text.CanonicalMeasured
 measure_words! = |content, config, space_width, measure_text!| {
 	bytes = content.to_utf8()
 	line_h = measure_line_height!(content, config, measure_text!)

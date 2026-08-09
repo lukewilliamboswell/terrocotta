@@ -39,7 +39,7 @@ Layout :: {
 	stack : Stack(LayoutFrame),
 }.{
 	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle]
-	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : Element.Font } => Render.TextSize
+	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : Element.Font } -> Render.TextSize
 	TextSize : Render.TextSize
 	NodeId : U64
 
@@ -137,7 +137,7 @@ Layout :: {
 	next_node_index = |layout| layout.nodes.len()
 
 	## Push/pop UI messages to build the layout.
-	update! : Layout, Element.ElementOp(msg), (NodeId -> Element.BoxStatus), (NodeId -> LayoutTypes.Pos) => Try((Layout, [Node(NodeId, [Events(List(Event.Handler(msg))), NoEvent]), NoNode]), LayoutError)
+	update! : Layout, Element.ElementOp(msg), (NodeId -> Element.BoxStatus), (NodeId -> LayoutTypes.Pos) -> Try((Layout, [Node(NodeId, [Events(List(Event.Handler(msg))), NoEvent]), NoNode]), LayoutError)
 	update! = |layout, op, status_fn, scroll_fn| match op {
 		OpenBox(id, style_fn, events) => {
 			node_id = next_box_node_id(layout, id)?
@@ -613,7 +613,7 @@ build_text_node_data = |layout, config, text_layout| {
 	}
 }
 
-add_text! : Layout, NodeId, Str => Try(Layout, LayoutError)
+add_text! : Layout, NodeId, Str -> Try(Layout, LayoutError)
 add_text! = |layout, node_id, content| {
 	idx = layout.nodes.len()
 	text_config = layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config)

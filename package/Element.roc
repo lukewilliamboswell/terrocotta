@@ -18,7 +18,7 @@ Element := [].{
 
 	FontResource :: {
 		key : U64,
-		measure : Box(FontMeasure => { width : F32, height : F32 }),
+		measure : Box(FontMeasure -> { width : F32, height : F32 }),
 		draw : Box(FontDraw => {}),
 	}
 
@@ -33,10 +33,10 @@ Element := [].{
 		CustomFont(FontResource.(resource)) => resource.key
 	}
 
-	custom_font : { key : U64, measure! : FontMeasure => { width : F32, height : F32 }, draw! : FontDraw => {} } -> Font
+	custom_font : { key : U64, measure! : FontMeasure -> { width : F32, height : F32 }, draw! : FontDraw => {} } -> Font
 	custom_font = |config| CustomFont(FontResource.({ key: config.key, measure: Box.box(config.measure!), draw: Box.box(config.draw!) }))
 
-	measure_font! : FontResource, FontMeasure => { width : F32, height : F32 }
+	measure_font! : FontResource, FontMeasure -> { width : F32, height : F32 }
 	measure_font! = |FontResource.(resource), config| (Box.unbox(resource.measure))(config)
 
 	draw_font! : FontResource, FontDraw => {}

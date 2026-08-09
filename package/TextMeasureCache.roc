@@ -105,7 +105,7 @@ TextMeasureCache :: {
 		cache.entries.get(TextMeasureCache.key(content, config))
 	}
 
-	get_or_create! : TextMeasureCache, Str, Element.TextConfig => (TextMeasureCache, Entry)
+	get_or_create! : TextMeasureCache, Str, Element.TextConfig -> (TextMeasureCache, Entry)
 	get_or_create! = |cache, content, config| {
 		cache_key = TextMeasureCache.key(content, config)
 		match cache.entries.get(cache_key) {

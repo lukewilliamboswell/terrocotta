@@ -16,20 +16,36 @@ RocRayRenderer := [].{
 	with_font = |font| frame_adapter_for(LoadedRayFont(font))
 
 	font : Draw.Font -> Element.Font
-	font = |font| Element.custom_font({
+	font = |_font| Element.custom_font({
 		key: 1,
-		measure!: |config| Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font }),
+		# Layout runs in roc-ray's pure update phase, where hosted font metrics are
+		# unavailable. Keep measurement deterministic and use the loaded font only
+		# for drawing.
+		measure!: approximate_text,
 		draw!: |_config| {},
 	})
+}
+
+## Spike-only deterministic metrics for layout in roc-ray's Elm architecture.
+## The current examples are predominantly ASCII; a future font-metrics asset can
+## replace this without changing Terracotta's pure measurement contract.
+approximate_text : { text : Str, size : F32, spacing : F32 } -> Render.TextSize
+approximate_text = |config| {
+	glyph_count = config.text.to_utf8().len()
+	spacing_count = if glyph_count > 0 glyph_count - 1 else 0
+	{
+		width: glyph_count.to_f32() * config.size * 0.60 + spacing_count.to_f32() * config.spacing,
+		height: config.size,
+	}
 }
 
 frame_adapter_for : RayFont -> Render.FrameAdapter(Draw.Frame)
 frame_adapter_for = |ray_font| Render.frame_adapter({
 	measure_text!: |config| match config.font {
-		DefaultFont => Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: Draw.default_font })
+		DefaultFont => approximate_text({ text: config.text, size: config.size, spacing: config.spacing })
 		CustomFont(resource) => match ray_font {
 			NoRayFont => Element.measure_font!(resource, { text: config.text, size: config.size, spacing: config.spacing })
-			LoadedRayFont(font) => Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font })
+			LoadedRayFont(_) => approximate_text({ text: config.text, size: config.size, spacing: config.spacing })
 		}
 	},
 	render!: |frame, commands| {
@@ -43,7 +59,7 @@ ray_color : Color -> _
 ray_color = |color| Draw.from_rgba({ r: color.r, g: color.g, b: color.b, a: color.a })
 
 draw_rect! : Draw.Frame, F32, F32, F32, F32, Color => {}
-draw_rect! = |frame, x, y, width, height, color| frame.rectangle!({ x, y, width, height, style: ray_color(color).filled() })
+draw_rect! = |frame, x, y, width, height, color| frame.rectangle!({ x, y, width, height, style: Draw.filled(ray_color(color)) })
 
 draw_command! : Draw.Frame, RayFont, Render.Command => {}
 draw_command! = |frame, ray_font, command| match command {
@@ -55,7 +71,7 @@ draw_command! = |frame, ray_font, command| match command {
 		height: rect.height,
 		radius: rect.radius,
 		segments: 12,
-		style: ray_color(rect.color).filled(),
+		style: Draw.filled(ray_color(rect.color)),
 	})
 	Shadow(shadow) => {
 		shells : List(F32)
@@ -70,7 +86,7 @@ draw_command! = |frame, ray_font, command| match command {
 				height: shadow.height + expand * 2,
 				radius: shadow.radius + expand,
 				segments: 12,
-				style: ray_color(shadow.color.with_alpha(shadow.color.a // 4)).filled(),
+				style: Draw.filled(ray_color(shadow.color.with_alpha(shadow.color.a // 4))),
 			})
 		}
 	}
@@ -84,7 +100,7 @@ draw_command! = |frame, ray_font, command| match command {
 				height: border.height,
 				radius: border.radius,
 				segments: 12,
-				style: ray_color(border.color).outlined(border.top),
+				style: Draw.outlined(ray_color(border.color), border.top),
 			})
 		} else {
 			if border.top > 0 draw_rect!(frame, border.x, border.y, border.width, border.top, border.color)

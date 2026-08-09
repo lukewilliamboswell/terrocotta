@@ -53,12 +53,16 @@ SceneRenderer :: [].{
 
 	frame_adapter : Resources -> Render.FrameAdapter(Draw.Frame)
 	frame_adapter = |resources| Render.frame_adapter({
-		measure_text!: |config| match config.font {
-			DefaultFont => Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: Draw.default_font })
-			CustomFont(_) => Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: resources.font })
-		},
+		measure_text!: |config| approximate_text({ text: config.text, size: config.size, spacing: config.spacing }),
 		render!: |frame, commands| render_commands!(frame, resources, commands),
 	})
+}
+
+approximate_text : { text : Str, size : F32, spacing : F32 } -> Render.TextSize
+approximate_text = |config| {
+	glyph_count = config.text.to_utf8().len()
+	spacing_count = if glyph_count > 0 glyph_count - 1 else 0
+	{ width: glyph_count.to_f32() * config.size * 0.60 + spacing_count.to_f32() * config.spacing, height: config.size }
 }
 
 CanvasDepthItem : [
@@ -127,7 +131,7 @@ canvas_depth_items = |quads, lines, circles| {
 }
 
 draw_rect! : Draw.Frame, F32, F32, F32, F32, Color => {}
-draw_rect! = |frame, x, y, width, height, color| frame.rectangle!({ x, y, width, height, style: ray_color(color).filled() })
+draw_rect! = |frame, x, y, width, height, color| frame.rectangle!({ x, y, width, height, style: Draw.filled(ray_color(color)) })
 
 resource_texture : SceneRenderer.Resources, Element.Texture -> Assets.Texture
 resource_texture = |resources, texture_value| {
@@ -173,7 +177,7 @@ draw_render_command! = |frame, resources, command| match command {
 		height: rect.height,
 		radius: rect.radius,
 		segments: 12,
-		style: ray_color(rect.color).filled(),
+		style: Draw.filled(ray_color(rect.color)),
 	})
 	Shadow(item) => {
 		# Four translucent shells approximate a soft shadow without a blur pass.
@@ -189,7 +193,7 @@ draw_render_command! = |frame, resources, command| match command {
 				height: item.height + expand * 2,
 				radius: item.radius + expand,
 				segments: 12,
-				style: ray_color(item.color.with_alpha(item.color.a // 4)).filled(),
+				style: Draw.filled(ray_color(item.color.with_alpha(item.color.a // 4))),
 			})
 		}
 	}
@@ -203,7 +207,7 @@ draw_render_command! = |frame, resources, command| match command {
 				height: border.height,
 				radius: border.radius,
 				segments: 12,
-				style: ray_color(border.color).outlined(border.top),
+				style: Draw.outlined(ray_color(border.color), border.top),
 			})
 		} else {
 			if border.top > 0 {
@@ -336,7 +340,7 @@ draw_render_command! = |frame, resources, command| match command {
 						DepthCircle(value) => scene_frame.circle!({
 							center: to_target(value.center),
 							radius: value.radius * target_scale,
-							style: ray_color(value.color).filled(),
+							style: Draw.filled(ray_color(value.color)),
 						})
 					}
 				}
@@ -380,7 +384,7 @@ draw_render_command! = |frame, resources, command| match command {
 									blend_frame.circle!({
 										center: to_bloom(circle.center),
 										radius: circle.radius * bloom_scale,
-										style: ray_color(circle.color).filled(),
+										style: Draw.filled(ray_color(circle.color)),
 									})
 								}
 								Ok({})
