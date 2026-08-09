@@ -90,8 +90,8 @@ TextMeasureCache :: {
 		}
 	}
 
-	## Insert an already measured entry. This is useful for deterministic callers
-	## that cannot perform host effects, such as pure layout tests.
+	## Seed a canonical entry directly. This is useful for deterministic callers
+	## and tests that want a known cache state without calculating a measurement.
 	insert : TextMeasureCache, Str, Element.TextConfig, Entry -> TextMeasureCache
 	insert = |cache, content, config, entry| {
 		cache_key = TextMeasureCache.key(content, config)
@@ -99,7 +99,8 @@ TextMeasureCache :: {
 		{ ..cache, entries: cache.entries.insert(cache_key, current_entry) }
 	}
 
-	## Read an existing measurement without performing host measurement.
+	## Read a seeded measurement only. A miss reports `KeyNotFound`; it does not
+	## calculate a new entry.
 	get : TextMeasureCache, Str, Element.TextConfig -> Try(Entry, [KeyNotFound, ..])
 	get = |cache, content, config| {
 		cache.entries.get(TextMeasureCache.key(content, config))
@@ -204,7 +205,7 @@ expect {
 	}
 }
 
-## Pure lookup reports a missing measurement without invoking the host.
+## A lookup miss reports `KeyNotFound` without calculating an entry.
 expect {
 	cache = TextMeasureCache.new(test_measure_text)
 	match cache.get("missing text", Element.default_text) {

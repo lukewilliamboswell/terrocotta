@@ -20,7 +20,7 @@ import RocRayRenderer
 
 theme = Theme.dark
 
-Model :: Program.State(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame, {})
 
 AppModel : {
 	count : I32,
@@ -31,7 +31,7 @@ Msg : [
 	Increment,
 ]
 
-init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
 init! = |_config| {
 	rendering = RocRayRenderer.default!({})
 	Ok({ model: { count: 0 }, measure_text: rendering.measure_text, renderer: rendering.renderer })
@@ -80,6 +80,7 @@ config = { ..Program.default, title: "Counter Example", width: 640, height: 420 
 tc_program = Program.new!({
 	config,
 	init!,
+	render_data: Program.no_render_data,
 	view,
 	update,
 })

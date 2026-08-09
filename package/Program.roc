@@ -4,8 +4,9 @@
 ## Usage:
 ##   program = Program.new!({ config, init!, view, update })
 ##
-## `init!` returns the initial model, a pure text measurer, and the retained
-## command renderer.
+## `init!` returns the initial model, a pure text measurer, and one retained
+## command renderer. Programs derive compact render data from a pre-event model
+## rather than retaining that model for rendering.
 import Layout
 import LayoutTypes
 import Render
@@ -102,29 +103,20 @@ Program :: [].{
 	}
 
 	## State for the message-driven renderer. `update` produces and retains one
-	## command list; `render!` receives the platform-owned drawing capability and
-	## only replays that list. The renderer may retain host resources, while
-	## `Layout` retains only its separate pure text measurer.
-	State(model, msg, draw_frame) :: {
+	## command list plus its compact render data; `render!` passes both to the
+	## renderer's single resource-owning closure. `Layout` retains only its
+	## separate pure text measurer, and State never retains a second app model.
+	State(model, msg, draw_frame, data) :: {
 		model : model,
-		render_snapshot : RenderSnapshot(model),
+		render_data : { data : data, frame : Frame },
 		layout : Layout,
-		renderer : Render.Adapter(draw_frame),
+		renderer : Render.Adapter(draw_frame, data),
 		commands : List(Render.Command),
 		hovered : List(U64),
 		focused : U64,
 		scroll : Dict(U64, ScrollState),
 		drag : Drag.DragState,
 	}
-
-	## Model/frame pair associated with retained commands. `CurrentModel` avoids
-	## retaining a second ARC owner on frames with no UI event messages;
-	## `RetainedModel` owns the required pre-event model only when it differs
-	## from the next retained model.
-	RenderSnapshot(model) : [
-		CurrentModel(Frame),
-		RetainedModel({ model : model, frame : Frame }),
-	]
 
 	## The full structural step accepted by a program. Terracotta reads
 	## host observations from it but passes the complete value to `on_step`, so
@@ -174,19 +166,32 @@ Program :: [].{
 	no_work : m -> StepResult(m, action, task)
 	no_work = |model| { model, actions: [], tasks: [] }
 
+	## Default compact render-data projection for renderers that have no
+	## pre-render inputs. Use this with `new!` to retain no app data beside Frame.
+	no_render_data : m, Frame -> {}
+	no_render_data = |_model, _frame| {}
+
 	## Fold a batch of platform messages with the application's ordinary update
 	## function. `new!` uses this for `step.messages`; custom programs can use it
-	## when they want to augment the default platform-message behavior.
+	## when they want to augment the default platform-message behavior. Work is
+	## appended element-by-element into unique accumulators, keeping a message
+	## batch amortized-linear even when reducers emit several items each.
 	apply_messages : m, List(msg), (m, msg -> StepResult(m, action, task)) -> StepResult(m, action, task)
 	apply_messages = |model, messages, update| {
 		var $model = model
-		var $work = { actions: [], tasks: [] }
+		var $actions = []
+		var $tasks = []
 		for message in messages {
 			result = update($model, message)
 			$model = result.model
-			$work = Program.append_work($work, Program.step_work(result))
+			for action in result.actions {
+				$actions = $actions.append(action)
+			}
+			for task in result.tasks {
+				$tasks = $tasks.append(task)
+			}
 		}
-		{ model: $model, actions: $work.actions, tasks: $work.tasks }
+		{ model: $model, actions: $actions, tasks: $tasks }
 	}
 
 	## Preserve platform work returned by `on_step` while replacing only the
@@ -203,26 +208,28 @@ Program :: [].{
 	}
 
 	## Build a message-driven program. `init!` supplies the initial model, a pure
-	## text measurer, and command renderer. The platform update folds the full
-	## step's `messages` through `update`, then prepares retained commands.
-	## `render!` only replays those commands. Use `custom!` when platform-step
-	## processing needs to return actions or tasks of its own.
+	## text measurer, and command renderer. `render_data` derives compact data
+	## from the exact pre-event render model and Frame. The platform update folds
+	## the full step's `messages` through `update`, then prepares retained
+	## commands. Use `Program.no_render_data` when the renderer needs no data;
+	## use `custom!` for custom step/frame hooks.
 	new! : {
 		config : Config,
-		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame) }, [Exit(I64)]),
+		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, data) }, [Exit(I64)]),
+		render_data : m, Frame -> data,
 		view : m -> Element.View(msg),
 		update : m, msg -> StepResult(m, action, task),
 	} -> {
-		init! : startup => Try(State(m, msg, draw_frame), [Exit(I64)]),
-		update : State(m, msg, draw_frame), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
-		render! : State(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
+		init! : startup => Try(State(m, msg, draw_frame, data), [Exit(I64)]),
+		update : State(m, msg, draw_frame, data), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame, data), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : State(m, msg, draw_frame, data), draw_frame => Try({}, [Exit(I64), ..]),
 	}
-	new! = |{ config, init!, view, update }| Program.custom!({
+	new! = |{ config, init!, render_data, view, update }| Program.custom!({
 		config,
 		init!,
 		on_step: |model, step| Program.apply_messages(model, step.messages, update),
 		on_frame: |model, _frame| model,
-		before_render!: |_model, _frame, _draw_frame| {},
+		render_data,
 		view,
 		update,
 	})
@@ -231,26 +238,28 @@ Program :: [].{
 	## full platform step after inherited scrolling is updated and may fold,
 	## replace, or augment `step.messages`; its returned actions and tasks pass
 	## through unchanged. `on_frame` then creates the render model, layout, and
-	## retained commands. UI events then update the retained `model` and may emit
-	## same-cycle actions and tasks; those follow `on_step` work in event order.
+	## retained commands. `render_data` then derives ordinary compact data from
+	## that exact pre-event render model and Frame. UI events update the retained
+	## `model` afterwards and may emit same-cycle actions and tasks; those follow
+	## `on_step` work in event order.
 	##
-	## `before_render!` runs immediately before replaying those retained commands
-	## with the exact pre-event model and `Frame` that produced them. It receives
-	## no platform step or task messages, so retained state remains compact.
+	## The renderer receives `render_data` and the same Frame immediately before
+	## replaying the retained commands. Its single closure owns any associated
+	## shaders or uniforms; Program stores no second app model.
 	custom! : {
 		config : Config,
-		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame) }, [Exit(I64)]),
+		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, data) }, [Exit(I64)]),
 		on_step : m, Step(msg, input, mouse, window, time, step) -> StepResult(m, action, task),
 		on_frame : m, Frame -> m,
-		before_render! : m, Frame, draw_frame => {},
+		render_data : m, Frame -> data,
 		view : m -> Element.View(msg),
 		update : m, msg -> StepResult(m, action, task),
 	} -> {
-		init! : startup => Try(State(m, msg, draw_frame), [Exit(I64)]),
-		update : State(m, msg, draw_frame), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
-		render! : State(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
+		init! : startup => Try(State(m, msg, draw_frame, data), [Exit(I64)]),
+		update : State(m, msg, draw_frame, data), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame, data), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : State(m, msg, draw_frame, data), draw_frame => Try({}, [Exit(I64), ..]),
 	}
-	custom! = |{ config, init!, on_step, on_frame, before_render!, view, update }| {
+	custom! = |{ config, init!, on_step, on_frame, render_data, view, update }| {
 		init_state! = |_startup| {
 			initialized = init!(config)?
 			initial_frame = {
@@ -262,7 +271,7 @@ Program :: [].{
 				State.(
 					{
 						model: initialized.model,
-						render_snapshot: CurrentModel(initial_frame),
+						render_data: { data: render_data(initialized.model, initial_frame), frame: initial_frame },
 						layout: Layout.new(initialized.measure_text),
 						renderer: initialized.renderer,
 						commands: [],
@@ -289,11 +298,11 @@ Program :: [].{
 				scroll,
 				drag: state.drag,
 			}
-			prepared = prepare_frame(frame_input, state.commands, host, frame, view, update)?
+			prepared = prepare_frame(frame_input, state.commands, host, frame, render_data, view, update)?
 			next_state = State.(
 				{
 					model: prepared.model,
-					render_snapshot: prepared.render_snapshot,
+					render_data: { data: prepared.render_data, frame },
 					layout: prepared.layout,
 					renderer: state.renderer,
 					commands: prepared.commands,
@@ -308,11 +317,7 @@ Program :: [].{
 		}
 
 		render_state! = |State.(state), draw_frame| {
-			match state.render_snapshot {
-				CurrentModel(frame) => before_render!(state.model, frame, draw_frame)
-				RetainedModel(snapshot) => before_render!(snapshot.model, snapshot.frame, draw_frame)
-			}
-			Render.render!(state.renderer, draw_frame, state.commands)
+			Render.render!(state.renderer, draw_frame, state.render_data.data, state.render_data.frame, state.commands)
 			Ok({})
 		}
 
@@ -320,11 +325,12 @@ Program :: [].{
 	}
 }
 
-FramePreparation(model, action, task) : {
+FramePreparation(model, data, action, task) : {
 
-	## Exact snapshot paired with the retained commands. It uses the final model
-	## directly when no UI messages ran, avoiding a duplicate ARC owner.
-	render_snapshot : Program.RenderSnapshot(model),
+	## Compact data derived from the exact pre-event model paired with retained
+	## commands. Program does not add a model owner here; applications should keep
+	## this projection free of renderer resources.
+	render_data : data,
 	model : model,
 	work : Program.Work(action, task),
 	layout : Layout,
@@ -352,7 +358,7 @@ prepare_scroll = |layout, scroll, host| {
 }
 
 ## Convert host timing and screen observations into the compact `Frame` passed
-## to frame hooks and retained render snapshots.
+## to frame hooks and retained render data.
 frame_from_host : HostState(host, mouse) -> Program.Frame
 frame_from_host = |host| {
 	screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
@@ -363,9 +369,9 @@ frame_from_host = |host| {
 	}
 }
 
-## Prepare layout, UI events, and one retained command list after scroll and the
-## frame model are current. The returned snapshot is deliberately from before
-## UI events, exactly matching the retained commands.
+## Prepare layout, compact render data, UI events, and one retained command list
+## after scroll and the frame model are current. Render data is deliberately
+## derived before UI events, exactly matching the retained commands.
 FrameInput(model) : {
 	model : model,
 	layout : Layout,
@@ -375,8 +381,8 @@ FrameInput(model) : {
 	drag : Drag.DragState,
 }
 
-prepare_frame : FrameInput(m), List(Render.Command), HostState(host, mouse), Program.Frame, (m -> Element.View(msg)), (m, msg -> Program.StepResult(m, action, task)) -> Try(FramePreparation(m, action, task), [Exit(I64), ..])
-prepare_frame = |state, previous_commands, host, frame, view, update| {
+prepare_frame : FrameInput(m), List(Render.Command), HostState(host, mouse), Program.Frame, (m, Program.Frame -> data), (m -> Element.View(msg)), (m, msg -> Program.StepResult(m, action, task)) -> Try(FramePreparation(m, data, action, task), [Exit(I64), ..])
+prepare_frame = |state, previous_commands, host, frame, derive_render_data, view, update| {
 	screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
 
 	var $layout = state.layout.clear()
@@ -397,24 +403,13 @@ prepare_frame = |state, previous_commands, host, frame, view, update| {
 	}
 
 	$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
+	render_data = derive_render_data($model, frame)
 	{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
-	render_snapshot = render_snapshot_for_events(state.model, frame, messages)
 	ui_result = Program.apply_messages($model, messages, update)
 	$model = ui_result.model
 
 	commands = $layout.to_commands(screen, previous_commands).map_err(|_e| Exit(1))?
-	Ok({ render_snapshot, model: $model, work: Program.step_work(ui_result), layout: $layout, commands, hovered, focused, scroll: state.scroll, drag })
-}
-
-## Pair retained commands with their exact render model and frame. Empty UI
-## event batches use the final model directly, avoiding a second ARC owner.
-render_snapshot_for_events : m, Program.Frame, List(msg) -> Program.RenderSnapshot(m)
-render_snapshot_for_events = |render_model, frame, messages| {
-	if messages.len() == 0 {
-		CurrentModel(frame)
-	} else {
-		RetainedModel({ model: render_model, frame })
-	}
+	Ok({ render_data, model: $model, work: Program.step_work(ui_result), layout: $layout, commands, hovered, focused, scroll: state.scroll, drag })
 }
 
 ## Return whether an overflow mode permits user scrolling.
@@ -788,23 +783,22 @@ expect {
 		[1, 2],
 		|model, message| {
 			model: model + message,
-			actions: [message],
-			tasks: [model],
+			actions: [message, message + 10],
+			tasks: [model, model + 100],
 		},
 	)
 	all_work = Program.append_work({ actions: [10], tasks: [20] }, Program.step_work(ui))
 
-	ui.model == 3 and all_work.actions == [10, 1, 2] and all_work.tasks == [20, 0, 1]
+	ui.model == 3 and all_work.actions == [10, 1, 11, 2, 12] and all_work.tasks == [20, 0, 100, 1, 101]
 }
 
-## A retained pre-event model is needed only when UI events run after commands
-## are prepared; no-event frames keep one model owner.
+## Render data is a compact pre-event projection rather than a retained model.
 expect {
 	frame : Program.Frame
 	frame = { delta_seconds: 0.25, timestamp_nanos: 42, screen: { width: 640, height: 480 } }
+	project = |model, render_frame| { value: model, timestamp_nanos: render_frame.timestamp_nanos }
 
-	render_snapshot_for_events(8, frame, []) == CurrentModel(frame)
-		and render_snapshot_for_events(8, frame, ["ui-message"]) == RetainedModel({ model: 8, frame })
+	project(8, frame) == { value: 8, timestamp_nanos: 42 }
 }
 
 full_step_rows : Program.Step(

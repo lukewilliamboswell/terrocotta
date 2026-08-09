@@ -12,7 +12,7 @@ RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
 RocRayRenderer := [].{
 	## Startup bundle that keeps each font's pure measurement closure paired with
 	## the renderer that draws it.
-	Bundle : { font : Element.Font, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
+	Bundle : { font : Element.Font, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }
 
 	default! : {} => Bundle
 	default! = |{}| {
@@ -41,7 +41,7 @@ renderer_for = |ray_font, font, default_metrics| {
 		CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
 	}
 	renderer = Render.adapter({
-		render!: |frame, commands| {
+		render!: |frame, _data, _render_frame, commands| {
 			frame.clear!(Draw.from_rgba({ r: 255, g: 255, b: 255, a: 255 }))
 			render_range!(frame, ray_font, commands, 0, commands.len())
 			frame.fps!({ pos: { x: 0, y: 0 }, size: 16, color: ray_color(Color.gray) })

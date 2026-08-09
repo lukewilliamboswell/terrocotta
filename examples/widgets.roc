@@ -18,7 +18,7 @@ import tc.Widget
 import RocRayApp
 import RocRayRenderer
 
-Model :: Program.State(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame, {})
 
 AppModel : { theme : Theme, font : Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
 
@@ -138,7 +138,7 @@ update = |model, msg| {
 font_path : Str
 font_path = "examples/assets/Inter-Regular.ttf"
 
-init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
 init! = |_config| {
 	ray_font = Draw.load_font!({ path: font_path, size: 2 * 16 }).map_err(|_| Exit(1))?
 	rendering = RocRayRenderer.with_font!(ray_font)
@@ -159,6 +159,7 @@ config = { ..Program.default, title: "Widget Theme Showcase", width: 900, height
 tc_program = Program.new!({
 	config,
 	init!,
+	render_data: Program.no_render_data,
 	view,
 	update,
 })

@@ -186,14 +186,16 @@ while Bool.True {
     # solve layout constraints
     $layout = $layout.solve!()
 
-    # Commands pair with render_model before UI messages update the next model.
+    # Compact render data and commands pair with render_model before UI messages
+    # update the next model. The data must not retain the app model itself.
+    render_data = derive_render_data(render_model, frame)
     $commands = $layout.to_commands(screen, $commands)
     messages = user_interactions($layout, $bindings, host)
     ui_result = apply_messages(render_model, messages, update)
     $model = ui_result.model
 
-    # before_render! receives the exact model/frame snapshot that made commands.
-    before_render!(render_model, frame, draw_frame)
-    render!(renderer, draw_frame, $commands)
+    # One renderer closure owns any uniforms/resources, applies pre-render
+    # writes from render_data, then replays the matching commands.
+    render!(renderer, draw_frame, render_data, frame, $commands)
 }
 ```

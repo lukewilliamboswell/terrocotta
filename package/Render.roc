@@ -1,9 +1,10 @@
 ## Platform-independent render commands and adapter.
 ##
 ## Terracotta owns layout and command generation. Application initialization
-## supplies a pure text measurer separately from command rendering. This lets a
-## roc-ray app retain opaque ARC-owned fonts and textures in its renderer
-## without exposing scalar host handles to the UI package.
+## supplies a pure text measurer separately from one command-rendering closure.
+## That closure receives the compact frame data paired with commands, performs
+## any pre-render writes, and then replays commands while retaining its opaque
+## ARC-owned fonts, textures, shaders, and uniforms exactly once.
 import Assets
 import Color
 import Element
@@ -149,11 +150,21 @@ RenderMeasureTextRaw : {
 
 RenderTextSize : { width : F32, height : F32 }
 
+## Scalar observations paired with one retained command list. This is plain
+## data, so the renderer can use it without the UI runtime retaining an app
+## model or a host capability.
+RenderFrameRaw : {
+	delta_seconds : F32,
+	timestamp_nanos : U64,
+	screen : { width : F32, height : F32 },
+}
+
 ## Renderer whose draw callback receives a platform-owned per-frame capability.
-## It deliberately owns only command replay; pure measurement belongs to a
-## separate `MeasureText` value so layout never retains GPU resources.
-RenderAdapter(frame) : {
-	render! : frame, List(RenderCommandRaw) => {},
+## It owns both pre-render work and command replay so resource-heavy renderer
+## state has one closure owner. Pure measurement belongs to a separate
+## `MeasureText` value so layout never retains GPU resources.
+RenderAdapter(draw_frame, data) : {
+	render! : draw_frame, data, RenderFrameRaw, List(RenderCommandRaw) => {},
 }
 
 Render := [].{
@@ -173,11 +184,12 @@ Render := [].{
 	ShadowRaw : RenderShadowRaw
 	MeasureTextRaw : RenderMeasureTextRaw
 	TextSize : RenderTextSize
+	Frame : RenderFrameRaw
 
 	## Pure text measurer retained by `Layout` and its cache. Keep its captures
 	## limited to metrics/data, never the renderer or its host resources.
 	MeasureText : RenderMeasureTextRaw -> RenderTextSize
-	Adapter(frame) : RenderAdapter(frame)
+	Adapter(draw_frame, data) : RenderAdapter(draw_frame, data)
 
 	wrap : RenderCommandRaw -> Command
 	wrap = |value| value
@@ -270,15 +282,15 @@ Render := [].{
 	raw : Command -> RenderCommandRaw
 	raw = |value| value
 
-	adapter : RenderAdapter(frame) -> Adapter(frame)
+	adapter : RenderAdapter(draw_frame, data) -> Adapter(draw_frame, data)
 	adapter = |value| value
 
-	render! : Adapter(frame), frame, List(Command) => {}
-	render! = |adapter_value, frame_value, commands| {
-		raw_adapter : RenderAdapter(frame)
+	render! : Adapter(draw_frame, data), draw_frame, data, Frame, List(Command) => {}
+	render! = |adapter_value, draw_frame_value, data_value, frame_value, commands| {
+		raw_adapter : RenderAdapter(draw_frame, data)
 		raw_adapter = adapter_value
 		render_commands! = raw_adapter.render!
-		render_commands!(frame_value, commands)
+		render_commands!(draw_frame_value, data_value, frame_value, commands)
 	}
 
 	intersect : Rect, Rect -> Rect

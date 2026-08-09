@@ -30,7 +30,7 @@ newline_lorem = "Lorem ipsum dolor sit amet.\nInteger non sem vitae lacus.\nDone
 none_lorem : Str
 none_lorem = "Short raw line."
 
-Model :: Program.State(AppModel, Msg, Draw.Frame)
+Model :: Program.State(AppModel, Msg, Draw.Frame, {})
 
 AppModel : {
 	font : Font,
@@ -38,7 +38,7 @@ AppModel : {
 
 Msg : [NoOp]
 
-init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
 init! = |_config| {
 	 ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
 	rendering = RocRayRenderer.with_font!(ray_font)
@@ -137,6 +137,7 @@ config = { ..Program.default, title: "Text Wrap Example", width: 800, height: 60
 tc_program = Program.new!({
 	config,
 	init!,
+	render_data: Program.no_render_data,
 	view,
 	update,
 })
