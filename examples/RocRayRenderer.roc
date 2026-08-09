@@ -10,6 +10,8 @@ import tc.Render
 RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
 
 RocRayRenderer := [].{
+	## Startup bundle that keeps each font's pure measurement closure paired with
+	## the renderer that draws it.
 	Bundle : { font : Element.Font, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
 
 	default! : {} => Bundle
@@ -18,6 +20,7 @@ RocRayRenderer := [].{
 		renderer_for(NoRayFont, Element.default_font, default_metrics)
 	}
 
+	## Snapshot the default and loaded fonts once; both may occur in a view.
 	with_font! : Draw.Font => Bundle
 	with_font! = |font| {
 		default_metrics = Text.metrics!(Text.default_font)
