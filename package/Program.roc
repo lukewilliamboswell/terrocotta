@@ -166,11 +166,6 @@ Program :: [].{
 	no_work : m -> StepResult(m, action, task)
 	no_work = |model| { model, actions: [], tasks: [] }
 
-	## Default compact render-data projection for renderers that have no
-	## pre-render inputs. Use this with `new!` to retain no app data beside Frame.
-	no_render_data : m, Frame -> {}
-	no_render_data = |_model, _frame| {}
-
 	## Fold a batch of platform messages with the application's ordinary update
 	## function. `new!` uses this for `step.messages`; custom programs can use it
 	## when they want to augment the default platform-message behavior. Work is
@@ -208,28 +203,25 @@ Program :: [].{
 	}
 
 	## Build a message-driven program. `init!` supplies the initial model, a pure
-	## text measurer, and command renderer. `render_data` derives compact data
-	## from the exact pre-event render model and Frame. The platform update folds
-	## the full step's `messages` through `update`, then prepares retained
-	## commands. Use `Program.no_render_data` when the renderer needs no data;
-	## use `custom!` for custom step/frame hooks.
+	## text measurer, and command renderer. `new!` installs empty render data;
+	## use `custom!` when renderer pre-work needs a compact app-derived
+	## projection or when platform step/frame hooks need customization.
 	new! : {
 		config : Config,
-		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, data) }, [Exit(I64)]),
-		render_data : m, Frame -> data,
+		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, {}) }, [Exit(I64)]),
 		view : m -> Element.View(msg),
 		update : m, msg -> StepResult(m, action, task),
 	} -> {
-		init! : startup => Try(State(m, msg, draw_frame, data), [Exit(I64)]),
-		update : State(m, msg, draw_frame, data), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame, data), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
-		render! : State(m, msg, draw_frame, data), draw_frame => Try({}, [Exit(I64), ..]),
+		init! : startup => Try(State(m, msg, draw_frame, {}), [Exit(I64)]),
+		update : State(m, msg, draw_frame, {}), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame, {}), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
+		render! : State(m, msg, draw_frame, {}), draw_frame => Try({}, [Exit(I64), ..]),
 	}
-	new! = |{ config, init!, render_data, view, update }| Program.custom!({
+	new! = |{ config, init!, view, update }| Program.custom!({
 		config,
 		init!,
 		on_step: |model, step| Program.apply_messages(model, step.messages, update),
 		on_frame: |model, _frame| model,
-		render_data,
+		render_data: |_model, _frame| {},
 		view,
 		update,
 	})

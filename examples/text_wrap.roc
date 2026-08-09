@@ -137,7 +137,6 @@ config = { ..Program.default, title: "Text Wrap Example", width: 800, height: 60
 tc_program = Program.new!({
 	config,
 	init!,
-	render_data: Program.no_render_data,
 	view,
 	update,
 })

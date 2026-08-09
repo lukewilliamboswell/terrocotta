@@ -159,7 +159,6 @@ config = { ..Program.default, title: "Widget Theme Showcase", width: 900, height
 tc_program = Program.new!({
 	config,
 	init!,
-	render_data: Program.no_render_data,
 	view,
 	update,
 })

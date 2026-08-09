@@ -85,7 +85,6 @@ config = { ..Program.default, title: "Scrollable Container", width: 720, height:
 tc_program = Program.new!({
 	config,
 	init!,
-	render_data: Program.no_render_data,
 	view,
 	update,
 })

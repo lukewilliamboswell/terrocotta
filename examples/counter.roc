@@ -80,7 +80,6 @@ config = { ..Program.default, title: "Counter Example", width: 640, height: 420 
 tc_program = Program.new!({
 	config,
 	init!,
-	render_data: Program.no_render_data,
 	view,
 	update,
 })

@@ -128,7 +128,6 @@ config = { ..Program.default, title: "Floating Root", width: 720, height: 520 }
 tc_program = Program.new!({
 	config,
 	init!,
-	render_data: Program.no_render_data,
 	view,
 	update,
 })
