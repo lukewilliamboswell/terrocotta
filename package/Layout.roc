@@ -39,15 +39,13 @@ Layout :: {
 	stack : Stack(LayoutFrame),
 }.{
 	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle]
-	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : Element.Font } -> Render.TextSize
 	TextSize : Render.TextSize
 	NodeId : U64
 
-	## Create an empty layout using an explicit text measurement function.
-	## This keeps headless layout tests and alternate renderers independent of a
-	## platform host ability.
-	new_with_measure_text : MeasureTextFn -> Layout
-	new_with_measure_text = |measure_text| {
+	## Create an empty layout from a pure text measurer. This keeps the retained
+	## cache independent from command replay closures and host-owned resources.
+	new : Render.MeasureText -> Layout
+	new = |measure_text| {
 		nodes: [],
 		text_contents: [],
 		text_lines: [],
@@ -58,11 +56,6 @@ Layout :: {
 		root_indices: [],
 		stack: Stack.new(),
 	}
-
-	## Create an empty layout from a pure text measurer. This keeps the retained
-	## cache independent from command replay closures and host-owned resources.
-	new : Render.MeasureText -> Layout
-	new = |measure_text| Layout.new_with_measure_text(measure_text)
 
 	## Create empty Layout with capacity reserved for internal builder lists.
 	with_capacity : U64, Render.MeasureText -> Layout
@@ -368,7 +361,7 @@ test_layout = || {
 		gaps = F32.max(0, len - 1)
 		{ width: len * config.size + gaps * config.spacing, height: config.size }
 	}
-	Layout.new_with_measure_text(measure_text)
+	Layout.new(measure_text)
 }
 
 resolve_box_text : Layout, Element.TextStyle -> Element.TextConfig

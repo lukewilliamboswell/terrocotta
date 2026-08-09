@@ -237,7 +237,7 @@ drag_test_scene = || {
 		],
 	)
 	measure_text = |_config| { width: 0, height: 0 }
-	layout = Layout.new_with_measure_text(measure_text)
+	layout = Layout.new(measure_text)
 	status = |_node_id| { focused: False, hovered: False, pressed: False, disabled: False }
 	scroll = |_node_id| { x: 0, y: 0 }
 	var $layout = layout

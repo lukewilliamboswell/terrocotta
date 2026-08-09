@@ -191,16 +191,11 @@ Render := [].{
 	MeasureText : RenderMeasureTextRaw -> RenderTextSize
 	Adapter(draw_frame, data) : RenderAdapter(draw_frame, data)
 
-	wrap : RenderCommandRaw -> Command
-	wrap = |value| value
-
 	rectangle : { x : F32, y : F32, width : F32, height : F32, color : Color } -> Command
 	rectangle = |config| {
 		payload : RenderRectangleRaw
 		payload = config
-		raw_command : RenderCommandRaw
-		raw_command = Rectangle(payload)
-		Render.wrap(raw_command)
+		Rectangle(payload)
 	}
 
 	rounded_rectangle : { x : F32, y : F32, width : F32, height : F32, radius : F32, color : Color } -> Command
@@ -215,72 +210,51 @@ Render := [].{
 			segments: 12,
 			color: config.color,
 		}
-		raw_command : RenderCommandRaw
-		raw_command = RoundedRectangle(payload)
-		Render.wrap(raw_command)
+		RoundedRectangle(payload)
 	}
 
 	border : { x : F32, y : F32, width : F32, height : F32, radius : F32, color : Color, left : F32, right : F32, top : F32, bottom : F32 } -> Command
 	border = |config| {
 		payload : RenderBorderRaw
 		payload = config
-		raw_command : RenderCommandRaw
-		raw_command = Border(payload)
-		Render.wrap(raw_command)
+		Border(payload)
 	}
 
 	text : { x : F32, y : F32, text : Str, font_size : F32, spacing : F32, color : Color, font : Element.Font } -> Command
 	text = |config| {
 		payload : RenderTextRawConfig
 		payload = config
-		raw_command : RenderCommandRaw
-		raw_command = Text(payload)
-		Render.wrap(raw_command)
+		Text(payload)
 	}
 
 	image : { x : F32, y : F32, width : F32, height : F32, texture : Assets.Texture, tint : Color } -> Command
 	image = |config| {
 		payload : RenderImageRaw
 		payload = config
-		raw_command : RenderCommandRaw
-		raw_command = Image(payload)
-		Render.wrap(raw_command)
+		Image(payload)
 	}
 
 	canvas : { x : F32, y : F32, width : F32, height : F32, view_width : F32, view_height : F32, texture_quads : List(Element.CanvasTextureQuad), underlay_lines : List(Element.CanvasLine), overlay_texture_quads : List(Element.CanvasTextureQuad), radial_gradients : List(Element.CanvasRadialGradient), lines : List(Element.CanvasLine), circles : List(Element.CanvasCircle) } -> Command
 	canvas = |config| {
 		payload : RenderCanvasRaw
 		payload = config
-		raw_command : RenderCommandRaw
-		raw_command = Canvas(payload)
-		Render.wrap(raw_command)
+		Canvas(payload)
 	}
 
 	shadow : RenderShadowRaw -> Command
 	shadow = |config| {
-		raw_command : RenderCommandRaw
-		raw_command = Shadow(config)
-		Render.wrap(raw_command)
+		Shadow(config)
 	}
 
 	scissor_start : { x : F32, y : F32, width : F32, height : F32 } -> Command
 	scissor_start = |bounds| {
 		payload : RenderRect
 		payload = bounds
-		raw_command : RenderCommandRaw
-		raw_command = ScissorStart(payload)
-		Render.wrap(raw_command)
+		ScissorStart(payload)
 	}
 
 	scissor_end : Command
-	scissor_end = {
-		raw_command : RenderCommandRaw
-		raw_command = ScissorEnd
-		Render.wrap(raw_command)
-	}
-
-	raw : Command -> RenderCommandRaw
-	raw = |value| value
+	scissor_end = ScissorEnd
 
 	adapter : RenderAdapter(draw_frame, data) -> Adapter(draw_frame, data)
 	adapter = |value| value
