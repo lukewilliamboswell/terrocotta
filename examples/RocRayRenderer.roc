@@ -9,11 +9,13 @@ import tc.Render
 RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
 
 RocRayRenderer := [].{
-	default : Render.Adapter(Draw.Frame)
-	default = adapter_for(NoRayFont)
+	Renderer : { measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }
 
-	with_font : Draw.Font -> Render.Adapter(Draw.Frame)
-	with_font = |font| adapter_for(LoadedRayFont(font))
+	default : Renderer
+	default = renderer_for(NoRayFont)
+
+	with_font : Draw.Font -> Renderer
+	with_font = |font| renderer_for(LoadedRayFont(font))
 
 	font : Draw.Font -> Element.Font
 	font = |_font| Element.custom_font({
@@ -21,7 +23,7 @@ RocRayRenderer := [].{
 		# Layout runs in roc-ray's pure update phase, where hosted font metrics are
 		# unavailable. Keep measurement deterministic and use the loaded font only
 		# for drawing.
-		measure!: approximate_text,
+		measure: approximate_text,
 		draw!: |_config| {},
 	})
 }
@@ -39,21 +41,21 @@ approximate_text = |config| {
 	}
 }
 
-adapter_for : RayFont -> Render.Adapter(Draw.Frame)
-adapter_for = |ray_font| Render.adapter({
-	measure_text: |config| match config.font {
+renderer_for : RayFont -> RocRayRenderer.Renderer
+renderer_for = |ray_font| {
+	measure_text = |config| match config.font {
 		DefaultFont => approximate_text({ text: config.text, size: config.size, spacing: config.spacing })
-		CustomFont(resource) => match ray_font {
-			NoRayFont => Element.measure_font!(resource, { text: config.text, size: config.size, spacing: config.spacing })
-			LoadedRayFont(_) => approximate_text({ text: config.text, size: config.size, spacing: config.spacing })
-		}
-	},
-	render!: |frame, commands| {
-		frame.clear!(Draw.from_rgba({ r: 255, g: 255, b: 255, a: 255 }))
-		render_range!(frame, ray_font, commands, 0, commands.len())
-		frame.fps!({ pos: { x: 0, y: 0 }, size: 16, color: ray_color(Color.gray) })
-	},
-})
+		CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
+	}
+	renderer = Render.adapter({
+		render!: |frame, commands| {
+			frame.clear!(Draw.from_rgba({ r: 255, g: 255, b: 255, a: 255 }))
+			render_range!(frame, ray_font, commands, 0, commands.len())
+			frame.fps!({ pos: { x: 0, y: 0 }, size: 16, color: ray_color(Color.gray) })
+		},
+	})
+	{ measure_text, renderer }
+}
 
 ray_color : Color -> _
 ray_color = |color| Draw.from_rgba({ r: color.r, g: color.g, b: color.b, a: color.a })

@@ -10,6 +10,7 @@ import rr.Program as RayProgram
 
 import tc.Element exposing [box, text, View, style]
 import tc.Program
+import tc.Render
 import tc.Theme
 
 import RocRayApp
@@ -21,11 +22,14 @@ Model :: Program.State({}, Msg, Draw.Frame)
 
 Msg : []
 
-init! : Program.Config => Try({}, [Exit(I64)])
-init! = |_config| Ok({})
+init! : Program.Config => Try({ model : {}, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! = |_config| {
+	rendering = RocRayRenderer.default
+	Ok({ model: {}, measure_text: rendering.measure_text, renderer: rendering.renderer })
+}
 
-update : {}, Msg -> {}
-update = |model, _msg| model
+update : {}, Msg -> Program.StepResult({}, action, task)
+update = |model, _msg| Program.no_work(model)
 
 row : U64 -> View(Msg)
 row = |index| {
@@ -80,7 +84,6 @@ config = { ..Program.default, title: "Scrollable Container", width: 720, height:
 
 tc_program = Program.new!({
 	config,
-	renderer: RocRayRenderer.default,
 	init!,
 	view,
 	update,

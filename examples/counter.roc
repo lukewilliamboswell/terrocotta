@@ -11,6 +11,7 @@ import rr.Program as RayProgram
 import tc.Color
 import tc.Element exposing [box, text, View, style, default_font]
 import tc.Program
+import tc.Render
 import tc.Theme
 import tc.Widget exposing [button]
 
@@ -30,14 +31,19 @@ Msg : [
 	Increment,
 ]
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| Ok({ count: 0 })
-
-update : AppModel, Msg -> AppModel
-update = |model, msg| match msg {
-	Decrement => { ..model, count: model.count - 1 }
-	Increment => { ..model, count: model.count + 1 }
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! = |_config| {
+	rendering = RocRayRenderer.default
+	Ok({ model: { count: 0 }, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
+
+update : AppModel, Msg -> Program.StepResult(AppModel, action, task)
+update = |model, msg| Program.no_work(
+	match msg {
+		Decrement => { ..model, count: model.count - 1 }
+		Increment => { ..model, count: model.count + 1 }
+	},
+)
 
 view : AppModel -> View(Msg)
 view = |model| {
@@ -73,7 +79,6 @@ config = { ..Program.default, title: "Counter Example", width: 640, height: 420 
 
 tc_program = Program.new!({
 	config,
-	renderer: RocRayRenderer.default,
 	init!,
 	view,
 	update,

@@ -38,17 +38,15 @@ AppModel : {
 
 Msg : [NoOp]
 
-init! : Program.Config => Try({ model : AppModel, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |_config| {
 	ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
-	Ok({
-		model: { font: RocRayRenderer.font(ray_font) },
-		renderer: RocRayRenderer.with_font(ray_font),
-	})
+	rendering = RocRayRenderer.with_font(ray_font)
+	Ok({ model: { font: RocRayRenderer.font(ray_font) }, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 
-update : AppModel, Msg -> AppModel
-update = |model, _msg| model
+update : AppModel, Msg -> Program.StepResult(AppModel, action, task)
+update = |model, _msg| Program.no_work(model)
 
 label : Str -> View(Msg)
 label = |content| {
@@ -136,14 +134,9 @@ view = |model| {
 config : Program.Config
 config = { ..Program.default, title: "Text Wrap Example", width: 800, height: 600, resizable: Bool.True }
 
-tc_program = Program.custom!({
+tc_program = Program.new!({
 	config,
 	init!,
-	on_step: |model, step| {
-		{ model: Program.apply_messages(model, step.messages, update), actions: [], tasks: [] }
-	},
-	on_frame: |model, _frame| model,
-	before_render!: |_model, _frame, _draw_frame| {},
 	view,
 	update,
 })

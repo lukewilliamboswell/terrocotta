@@ -2,7 +2,10 @@
 ## Wires init, view, and update into the platform's { init!, render! } contract.
 ##
 ## Usage:
-##   program = Program.new!({ config, renderer, init!, view, update })
+##   program = Program.new!({ config, init!, view, update })
+##
+## `init!` returns the initial model, a pure text measurer, and the retained
+## command renderer.
 import Layout
 import LayoutTypes
 import Render
@@ -100,7 +103,8 @@ Program :: [].{
 
 	## State for the message-driven renderer. `update` produces and retains one
 	## command list; `render!` receives the platform-owned drawing capability and
-	## only replays that list. No host capability is retained in the model.
+	## only replays that list. The renderer may retain host resources, while
+	## `Layout` retains only its separate pure text measurer.
 	State(model, msg, draw_frame) :: {
 		model : model,
 		render_snapshot : RenderSnapshot(model),
@@ -159,45 +163,64 @@ Program :: [].{
 		tasks : List(task),
 	}
 
+	## Ordered platform work emitted while reducing messages.
+	Work(action, task) : {
+		actions : List(action),
+		tasks : List(task),
+	}
+
+	## Return a next model without scheduling platform work. This is the common
+	## reducer result for ordinary UI updates.
+	no_work : m -> StepResult(m, action, task)
+	no_work = |model| { model, actions: [], tasks: [] }
+
 	## Fold a batch of platform messages with the application's ordinary update
 	## function. `new!` uses this for `step.messages`; custom programs can use it
 	## when they want to augment the default platform-message behavior.
-	apply_messages : m, List(msg), (m, msg -> m) -> m
+	apply_messages : m, List(msg), (m, msg -> StepResult(m, action, task)) -> StepResult(m, action, task)
 	apply_messages = |model, messages, update| {
 		var $model = model
+		var $work = { actions: [], tasks: [] }
 		for message in messages {
-			$model = update($model, message)
+			result = update($model, message)
+			$model = result.model
+			$work = Program.append_work($work, Program.step_work(result))
 		}
-		$model
+		{ model: $model, actions: $work.actions, tasks: $work.tasks }
 	}
 
 	## Preserve platform work returned by `on_step` while replacing only the
 	## program state prepared for this cycle.
-	step_work : StepResult(m, action, task) -> { actions : List(action), tasks : List(task) }
+	step_work : StepResult(m, action, task) -> Work(action, task)
 	step_work = |result| { actions: result.actions, tasks: result.tasks }
 
-	## Build a message-driven program. `update`
-	## accepts the platform's full structural step, folds `step.messages` through
-	## `update`, and prepares retained commands. `render!` only replays those
-	## commands. Use `custom!` when platform-step processing needs to return
-	## actions or tasks of its own.
+	## Concatenate ordered work. Callers pass earlier work first, so actions and
+	## tasks preserve platform-step order before UI-event order.
+	append_work : Work(action, task), Work(action, task) -> Work(action, task)
+	append_work = |earlier, later| {
+		actions: earlier.actions.concat(later.actions),
+		tasks: earlier.tasks.concat(later.tasks),
+	}
+
+	## Build a message-driven program. `init!` supplies the initial model, a pure
+	## text measurer, and command renderer. The platform update folds the full
+	## step's `messages` through `update`, then prepares retained commands.
+	## `render!` only replays those commands. Use `custom!` when platform-step
+	## processing needs to return actions or tasks of its own.
 	new! : {
 		config : Config,
-		renderer : Render.Adapter(draw_frame),
-		init! : Config => Try(m, [Exit(I64)]),
+		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame) }, [Exit(I64)]),
 		view : m -> Element.View(msg),
-		update : m, msg -> m,
+		update : m, msg -> StepResult(m, action, task),
 	} -> {
 		init! : startup => Try(State(m, msg, draw_frame), [Exit(I64)]),
 		update : State(m, msg, draw_frame), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
 		render! : State(m, msg, draw_frame), draw_frame => Try({}, [Exit(I64), ..]),
 	}
-	new! = |{ config, renderer, init!, view, update }| Program.custom!({
+	new! = |{ config, init!, view, update }| Program.custom!({
 		config,
-		init!: |cfg| init!(cfg).map_ok(|model| { model, renderer }),
-		on_step: |model, step| {
-			{ model: Program.apply_messages(model, step.messages, update), actions: [], tasks: [] }
-		},
+		init!,
+		on_step: |model, step| Program.apply_messages(model, step.messages, update),
 		on_frame: |model, _frame| model,
 		before_render!: |_model, _frame, _draw_frame| {},
 		view,
@@ -208,19 +231,20 @@ Program :: [].{
 	## full platform step after inherited scrolling is updated and may fold,
 	## replace, or augment `step.messages`; its returned actions and tasks pass
 	## through unchanged. `on_frame` then creates the render model, layout, and
-	## retained commands. UI events update the retained `model` afterwards.
+	## retained commands. UI events then update the retained `model` and may emit
+	## same-cycle actions and tasks; those follow `on_step` work in event order.
 	##
 	## `before_render!` runs immediately before replaying those retained commands
 	## with the exact pre-event model and `Frame` that produced them. It receives
 	## no platform step or task messages, so retained state remains compact.
 	custom! : {
 		config : Config,
-		init! : Config => Try({ model : m, renderer : Render.Adapter(draw_frame) }, [Exit(I64)]),
+		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame) }, [Exit(I64)]),
 		on_step : m, Step(msg, input, mouse, window, time, step) -> StepResult(m, action, task),
 		on_frame : m, Frame -> m,
 		before_render! : m, Frame, draw_frame => {},
 		view : m -> Element.View(msg),
-		update : m, msg -> m,
+		update : m, msg -> StepResult(m, action, task),
 	} -> {
 		init! : startup => Try(State(m, msg, draw_frame), [Exit(I64)]),
 		update : State(m, msg, draw_frame), Step(msg, input, mouse, window, time, step) -> Try({ model : State(m, msg, draw_frame), actions : List(action), tasks : List(task) }, [Exit(I64), ..]),
@@ -239,7 +263,7 @@ Program :: [].{
 					{
 						model: initialized.model,
 						render_snapshot: CurrentModel(initial_frame),
-						layout: Layout.new(initialized.renderer),
+						layout: Layout.new(initialized.measure_text),
 						renderer: initialized.renderer,
 						commands: [],
 						hovered: [],
@@ -257,7 +281,15 @@ Program :: [].{
 			step_result = on_step(state.model, step)
 			frame = frame_from_host(host)
 			render_model = on_frame(step_result.model, frame)
-			prepared = prepare_frame({ ..state, model: render_model, scroll }, host, frame, view, update)?
+			frame_input = {
+				model: render_model,
+				layout: state.layout,
+				hovered: state.hovered,
+				focused: state.focused,
+				scroll,
+				drag: state.drag,
+			}
+			prepared = prepare_frame(frame_input, state.commands, host, frame, view, update)?
 			next_state = State.(
 				{
 					model: prepared.model,
@@ -271,7 +303,7 @@ Program :: [].{
 					drag: prepared.drag,
 				},
 			)
-			work = Program.step_work(step_result)
+			work = Program.append_work(Program.step_work(step_result), prepared.work)
 			Ok({ model: next_state, actions: work.actions, tasks: work.tasks })
 		}
 
@@ -288,12 +320,13 @@ Program :: [].{
 	}
 }
 
-FramePreparation(model) : {
+FramePreparation(model, action, task) : {
 
 	## Exact snapshot paired with the retained commands. It uses the final model
 	## directly when no UI messages ran, avoiding a duplicate ARC owner.
 	render_snapshot : Program.RenderSnapshot(model),
 	model : model,
+	work : Program.Work(action, task),
 	layout : Layout,
 	commands : List(Render.Command),
 	hovered : List(U64),
@@ -311,9 +344,8 @@ host_state = |step| {
 	mouse: step.input.mouse,
 }
 
-## Apply scrolling from the previous layout before any frame or platform-step
-## model work. All adapters use this first phase so a frame observes the same
-## inherited scroll ordering.
+## Apply scrolling from the previous layout before platform-step and frame-model
+## work. This preserves scroll-before-frame ordering for every update.
 prepare_scroll : Layout, Dict(U64, ScrollState), HostState(host, mouse) -> Try(Dict(U64, ScrollState), [Exit(I64), ..])
 prepare_scroll = |layout, scroll, host| {
 	update_scroll_containers(layout, scroll, { x: host.mouse.x, y: host.mouse.y }, host.mouse.wheel).map_err(|_e| Exit(1))
@@ -331,26 +363,20 @@ frame_from_host = |host| {
 	}
 }
 
-## Shared layout, event, and command-preparation phase for every adapter.
-## Callers update scroll and their frame model first, then this function views
-## and solves the layout, handles UI events, and retains one command list. The
-## returned snapshot is deliberately from before UI events, exactly matching
-## the retained commands.
-prepare_frame : {
-	model : m,
+## Prepare layout, UI events, and one retained command list after scroll and the
+## frame model are current. The returned snapshot is deliberately from before
+## UI events, exactly matching the retained commands.
+FrameInput(model) : {
+	model : model,
 	layout : Layout,
 	hovered : List(U64),
 	focused : U64,
 	scroll : Dict(U64, ScrollState),
 	drag : Drag.DragState,
-	..state,
-},
-HostState(host, mouse),
-Program.Frame,
-(m -> Element.View(msg)),
+}
 
-(m, msg -> m) -> Try(FramePreparation(m), [Exit(I64), ..])
-prepare_frame = |state, host, frame, view, update| {
+prepare_frame : FrameInput(m), List(Render.Command), HostState(host, mouse), Program.Frame, (m -> Element.View(msg)), (m, msg -> Program.StepResult(m, action, task)) -> Try(FramePreparation(m, action, task), [Exit(I64), ..])
+prepare_frame = |state, previous_commands, host, frame, view, update| {
 	screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
 
 	var $layout = state.layout.clear()
@@ -373,12 +399,11 @@ prepare_frame = |state, host, frame, view, update| {
 	$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
 	{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, host, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
 	render_snapshot = render_snapshot_for_events(state.model, frame, messages)
-	for message in messages {
-		$model = update($model, message)
-	}
+	ui_result = Program.apply_messages($model, messages, update)
+	$model = ui_result.model
 
-	commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
-	Ok({ render_snapshot, model: $model, layout: $layout, commands, hovered, focused, scroll: state.scroll, drag })
+	commands = $layout.to_commands(screen, previous_commands).map_err(|_e| Exit(1))?
+	Ok({ render_snapshot, model: $model, work: Program.step_work(ui_result), layout: $layout, commands, hovered, focused, scroll: state.scroll, drag })
 }
 
 ## Pair retained commands with their exact render model and frame. Empty UI
@@ -748,12 +773,28 @@ expect {
 }
 
 ## Default platform messages fold in arrival order before frame preparation.
-expect Program.apply_messages(3, [4, 5], |model, message| model + message) == 12
+expect Program.apply_messages(3, [4, 5], |model, message| Program.no_work(model + message)).model == 12
 
 ## Custom step work remains attached to the enclosing platform result.
 expect Program.step_work({ model: "ignored", actions: ["first", "second"], tasks: [7] }) == {
 	actions: ["first", "second"],
 	tasks: [7],
+}
+
+## Step work precedes UI work, while each UI message keeps reducer order.
+expect {
+	ui = Program.apply_messages(
+		0,
+		[1, 2],
+		|model, message| {
+			model: model + message,
+			actions: [message],
+			tasks: [model],
+		},
+	)
+	all_work = Program.append_work({ actions: [10], tasks: [20] }, Program.step_work(ui))
+
+	ui.model == 3 and all_work.actions == [10, 1, 2] and all_work.tasks == [20, 0, 1]
 }
 
 ## A retained pre-event model is needed only when UI events run after commands
@@ -764,4 +805,44 @@ expect {
 
 	render_snapshot_for_events(8, frame, []) == CurrentModel(frame)
 		and render_snapshot_for_events(8, frame, ["ui-message"]) == RetainedModel({ model: 8, frame })
+}
+
+full_step_rows : Program.Step(
+	Str,
+	{ text_input : List(U32), gamepads : List(U8) },
+	{},
+	{ focused : Bool, minimized : Bool },
+	{ frame_count : U64, wall_timestamp_nanos : U64 },
+	{ capture : Bool },
+) -> { messages : List(Str), text_input : List(U32), gamepads : List(U8), focused : Bool, minimized : Bool, frame_count : U64, capture : Bool }
+full_step_rows = |step| {
+	messages: step.messages,
+	text_input: step.input.text_input,
+	gamepads: step.input.gamepads,
+	focused: step.window.focused,
+	minimized: step.window.minimized,
+	frame_count: step.time.frame_count,
+	capture: step.capture,
+}
+
+## Structural steps retain all platform observations for custom `on_step` code.
+expect full_step_rows({
+	messages: ["external"],
+	input: {
+		keys: [],
+		text_input: [65],
+		gamepads: [2],
+		mouse: { buttons: [], left: False, middle: False, right: False, wheel: 0, wheel_x: 0, wheel_y: 0, delta_x: 0, delta_y: 0, x: 0, y: 0 },
+	},
+	window: { size: { width: 800, height: 600 }, focused: True, minimized: False },
+	time: { elapsed_seconds: 0.016, timestamp_nanos: 16_000_000, frame_count: 7, wall_timestamp_nanos: 17_000_000 },
+	capture: True,
+}) == {
+	messages: ["external"],
+	text_input: [65],
+	gamepads: [2],
+	focused: True,
+	minimized: False,
+	frame_count: 7,
+	capture: True,
 }

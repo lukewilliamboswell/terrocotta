@@ -1,8 +1,10 @@
 # Text measurement cache
 
-Terrocotta rebuilds its layout every frame. Measuring every text node through
-the host renderer on every rebuild would be unnecessarily expensive, so
-`Layout` keeps a persistent `TextMeasureCache`.
+Terrocotta rebuilds its layout every frame. Recomputing every text measurement
+on every rebuild would be unnecessarily expensive, so `Layout` keeps a
+persistent `TextMeasureCache`. The cache retains a pure `Render.MeasureText`
+function; it should capture only metrics or ordinary data, never a renderer or
+host-owned resource graph.
 
 The cache stores the parts of text measurement that are independent of the
 available layout width. Line wrapping remains a layout operation and is
@@ -19,7 +21,7 @@ text + font + font size + spacing
         miss             hit
           │              │
           ▼              │
-  host text measurement  │
+  pure text measurement  │
           │              │
           └──────┬───────┘
                  ▼
@@ -32,7 +34,7 @@ text + font + font size + spacing
 
 ## What is cached
 
-A cache key contains only values that affect the host's glyph measurement:
+A cache key contains only values that affect glyph measurement:
 
 ```roc
 Key : {
@@ -57,21 +59,21 @@ Each entry contains a canonical measurement:
 - the natural line count and whether the text contains newlines.
 
 Keeping measured word runs in the entry is what lets layout try different wrap
-widths without calling the host renderer again.
+widths without measuring again.
 
 ## Cache lifecycle
 
-`Layout.new()` creates one empty cache and captures the host's
-`measure_text_raw!` function. The same cache then travels with the `Layout`
-value.
+`Layout.new(measure_text)` creates one empty cache and captures the supplied
+pure `Render.MeasureText` value. The same cache then travels with the `Layout`
+value, independently of the command renderer retained by `Program.State`.
 
 When a text node is added, `Layout.add_text!` calls
-`TextMeasureCache.get_or_create!`:
+`TextMeasureCache.get_or_create`:
 
 1. On a hit, it returns the stored canonical measurement and marks the entry as
    used in the current generation.
-2. On a miss, `Text.measure_canonical!` measures the space, line height, and
-   word runs through the host, then inserts the result.
+2. On a miss, `Text.measure_canonical` measures the space, line height, and
+   word runs through the pure measurer, then inserts the result.
 3. `Layout` immediately derives the text node's intrinsic size from that
    canonical measurement.
 
@@ -97,9 +99,9 @@ This is closer to a bounded "recently used" cache than permanent memoization.
 It allows transient labels to disappear while stable UI text stays warm.
 
 `reset()` is useful when measurements may have become globally invalid, for
-example after replacing font resources or changing renderer behavior. Normal
-changes to text, font, font size, or spacing do not require a reset because
-they naturally produce a different key.
+example after replacing the pure metric data. Normal changes to text, font,
+font size, or spacing do not require a reset because they naturally produce a
+different key.
 
 ## Running example
 
@@ -169,9 +171,9 @@ available width of 6 it produces:
 +------+
 ```
 
-No host measurement occurs during either wrapping step. A later frame using
-the same text and measurement-related configuration hits the table and can
-wrap the stored runs again for its newly resolved width.
+No measurement occurs during either wrapping step. A later frame using the
+same text and measurement-related configuration hits the table and can wrap
+the stored runs again for its newly resolved width.
 
 ## Frame-local text data
 

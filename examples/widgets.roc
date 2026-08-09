@@ -122,21 +122,23 @@ view = |model| {
 	)
 }
 
-update : AppModel, Msg -> AppModel
+update : AppModel, Msg -> Program.StepResult(AppModel, action, task)
 update = |model, msg| {
-	match msg {
-		SetSliderValue(value) => { ..model, slider_value: value }
-		SetTheme(theme) => { ..model, theme: theme }
-		ToggleSelect(open) => { ..model, select_open: open }
-		SelectOption(index) => { ..model, select_open: False, select_selected: index }
-		SetToggle(on) => { ..model, toggle_on: on }
-	}
+	Program.no_work(
+		match msg {
+			SetSliderValue(value) => { ..model, slider_value: value }
+			SetTheme(theme) => { ..model, theme: theme }
+			ToggleSelect(open) => { ..model, select_open: open }
+			SelectOption(index) => { ..model, select_open: False, select_selected: index }
+			SetToggle(on) => { ..model, toggle_on: on }
+		},
+	)
 }
 
 font_path : Str
 font_path = "examples/assets/Inter-Regular.ttf"
 
-init! : Program.Config => Try({ model : AppModel, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
 init! = |_config| {
 	ray_font = Draw.load_font!({ path: font_path, size: 2 * 16 }).map_err(|_| Exit(1))?
 	model = {
@@ -147,20 +149,16 @@ init! = |_config| {
 		select_selected: 0,
 		toggle_on: False,
 	}
-	Ok({ model, renderer: RocRayRenderer.with_font(ray_font) })
+	rendering = RocRayRenderer.with_font(ray_font)
+	Ok({ model, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 
 config : Program.Config
 config = { ..Program.default, title: "Widget Theme Showcase", width: 900, height: 520 }
 
-tc_program = Program.custom!({
+tc_program = Program.new!({
 	config,
 	init!,
-	on_step: |model, step| {
-		{ model: Program.apply_messages(model, step.messages, update), actions: [], tasks: [] }
-	},
-	on_frame: |model, _frame| model,
-	before_render!: |_model, _frame, _draw_frame| {},
 	view,
 	update,
 })

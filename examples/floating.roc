@@ -12,6 +12,7 @@ import tc.Color
 import tc.Element exposing [box, text, View, style, default_floating_config]
 import tc.Widget exposing [column, row, button]
 import tc.Program
+import tc.Render
 import tc.Theme
 
 import RocRayApp
@@ -25,12 +26,15 @@ AppModel : { attach : Element.AttachPoint }
 
 Msg : Element.AttachPoint
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| Ok({ attach: Center })
+init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame) }, [Exit(I64)])
+init! = |_config| {
+	rendering = RocRayRenderer.default
+	Ok({ model: { attach: Center }, measure_text: rendering.measure_text, renderer: rendering.renderer })
+}
 
-update : AppModel, Msg -> AppModel
+update : AppModel, Msg -> Program.StepResult(AppModel, action, task)
 update = |model, msg| {
-	{ ..model, attach: msg }
+	Program.no_work({ ..model, attach: msg })
 }
 
 view : AppModel -> View(Msg)
@@ -123,7 +127,6 @@ config = { ..Program.default, title: "Floating Root", width: 720, height: 520 }
 
 tc_program = Program.new!({
 	config,
-	renderer: RocRayRenderer.default,
 	init!,
 	view,
 	update,

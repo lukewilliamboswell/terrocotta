@@ -153,24 +153,32 @@ Command : [
 ```
 
 Those commands are still platform-independent. `Render.render!` walks the list
-and dispatches each command through a `Renderer` record supplied by the host
-platform.
+and dispatches each command through the command renderer supplied during
+application initialization. Pure text measurement is supplied separately to
+`Layout`, so its persistent cache does not retain the renderer or host-owned
+resources.
 
 ## Runtime
 
 At a high level, the runtime frame loop looks like this:
 
 ```roc
-$model = init()
-$layout = Layout.new()
+{ model: $model, measure_text, renderer } = init!()
+$layout = Layout.new(measure_text)
+$commands = []
 $bindings = []
 
 while Bool.True {
+    # Keep inherited scrolling ahead of step and frame-model work.
+    $scroll = prepare_scroll($layout, $scroll, host)
+    step_result = on_step($model, full_platform_step)
+    render_model = on_frame(step_result.model, frame)
+
     $layout = $layout.clear()
     $bindings = $bindings.clear()
 
     # build layout from stream of ElementOp: [OpenBox(_, _), Text, Image, CloseBox
-    for element_op in view($model) {
+    for element_op in view(render_model) {
         $layout = $layout.update!(element_op)
         $bindings = collect_event_bindings($bindings, $layout, element_op)
     }
@@ -178,13 +186,14 @@ while Bool.True {
     # solve layout constraints
     $layout = $layout.solve!()
 
-    # update model
+    # Commands pair with render_model before UI messages update the next model.
+    $commands = $layout.to_commands(screen, $commands)
     messages = user_interactions($layout, $bindings, host)
-    for message in messages {
-        $model = update($model, message)
-    }
+    ui_result = apply_messages(render_model, messages, update)
+    $model = ui_result.model
 
-    # render layout
-    render!($layout)
+    # before_render! receives the exact model/frame snapshot that made commands.
+    before_render!(render_model, frame, draw_frame)
+    render!(renderer, draw_frame, $commands)
 }
 ```

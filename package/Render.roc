@@ -1,9 +1,9 @@
 ## Platform-independent render commands and adapter.
 ##
-## Terracotta owns layout and command generation. The application supplies two
-## callbacks: text measurement and command rendering. This lets a roc-ray app
-## retain its opaque ARC-owned fonts and textures without exposing scalar host
-## handles to the UI package.
+## Terracotta owns layout and command generation. Application initialization
+## supplies a pure text measurer separately from command rendering. This lets a
+## roc-ray app retain opaque ARC-owned fonts and textures in its renderer
+## without exposing scalar host handles to the UI package.
 import Assets
 import Color
 import Element
@@ -150,9 +150,9 @@ RenderMeasureTextRaw : {
 RenderTextSize : { width : F32, height : F32 }
 
 ## Renderer whose draw callback receives a platform-owned per-frame capability.
-## Measurement remains capability-free so layouts can cache it between frames.
+## It deliberately owns only command replay; pure measurement belongs to a
+## separate `MeasureText` value so layout never retains GPU resources.
 RenderAdapter(frame) : {
-	measure_text : RenderMeasureTextRaw -> RenderTextSize,
 	render! : frame, List(RenderCommandRaw) => {},
 }
 
@@ -173,6 +173,10 @@ Render := [].{
 	ShadowRaw : RenderShadowRaw
 	MeasureTextRaw : RenderMeasureTextRaw
 	TextSize : RenderTextSize
+
+	## Pure text measurer retained by `Layout` and its cache. Keep its captures
+	## limited to metrics/data, never the renderer or its host resources.
+	MeasureText : RenderMeasureTextRaw -> RenderTextSize
 	Adapter(frame) : RenderAdapter(frame)
 
 	wrap : RenderCommandRaw -> Command
@@ -268,14 +272,6 @@ Render := [].{
 
 	adapter : RenderAdapter(frame) -> Adapter(frame)
 	adapter = |value| value
-
-	measure_text : Adapter(frame), MeasureTextRaw -> TextSize
-	measure_text = |adapter_value, config| {
-		raw_adapter : RenderAdapter(frame)
-		raw_adapter = adapter_value
-		measure = raw_adapter.measure_text
-		measure(config)
-	}
 
 	render! : Adapter(frame), frame, List(Command) => {}
 	render! = |adapter_value, frame_value, commands| {

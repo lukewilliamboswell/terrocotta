@@ -59,18 +59,14 @@ Layout :: {
 		stack: Stack.new(),
 	}
 
-	## Create an empty layout using the application's renderer adapter. Text
-	## measurement remains available while commands are prepared.
-	new : Render.Adapter(frame) -> Layout
-	new = |adapter| {
-		measure_text = |config| Render.measure_text(adapter, config)
-		Layout.new_with_measure_text(measure_text)
-	}
+	## Create an empty layout from a pure text measurer. This keeps the retained
+	## cache independent from command replay closures and host-owned resources.
+	new : Render.MeasureText -> Layout
+	new = |measure_text| Layout.new_with_measure_text(measure_text)
 
 	## Create empty Layout with capacity reserved for internal builder lists.
-	with_capacity : U64, Render.Adapter(frame) -> Layout
-	with_capacity = |capacity, adapter| {
-		measure_text = |config| Render.measure_text(adapter, config)
+	with_capacity : U64, Render.MeasureText -> Layout
+	with_capacity = |capacity, measure_text| {
 		{
 			nodes: List.with_capacity(capacity),
 			text_contents: List.with_capacity(capacity // 2),
@@ -170,10 +166,11 @@ Layout :: {
 		Ok($layout)
 	}
 
-	## Phase 2: Extract render commands from a solved layout.
-	to_commands : Layout, { w : F32, h : F32 } -> Try(List(Render.Command), LayoutError)
-	to_commands = |layout, screen| {
-		emit_render_commands(layout, screen)
+	## Phase 2: Extract render commands from a solved layout. The supplied list
+	## is cleared and refilled so a retained program state reuses command storage.
+	to_commands : Layout, { w : F32, h : F32 }, List(Render.Command) -> Try(List(Render.Command), LayoutError)
+	to_commands = |layout, screen, previous_commands| {
+		emit_render_commands(layout, screen, previous_commands.clear())
 	}
 
 	## Return the deepest/latest box node ID containing the point.
@@ -594,7 +591,7 @@ add_text! : Layout, NodeId, Str -> Try(Layout, LayoutError)
 add_text! = |layout, node_id, content| {
 	idx = layout.nodes.len()
 	text_config = layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config)
-	(text_cache, text_measure) = layout.text_cache.get_or_create!(content, text_config)
+	(text_cache, text_measure) = layout.text_cache.get_or_create(content, text_config)
 	var $layout = layout
 	$layout = { ..$layout, text_cache }
 	text_layout = build_text_layout(content, text_config, text_measure)
@@ -943,9 +940,9 @@ text_align_offset = |align, box_width, text_width| match align {
 	Right => box_width - text_width
 }
 
-emit_render_commands : Layout, Size -> Try(List(Render.Command), LayoutError)
-emit_render_commands = |layout, screen| {
-	var $commands = []
+emit_render_commands : Layout, Size, List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_render_commands = |layout, screen, commands| {
+	var $commands = commands
 	for root in roots_in_z_order(layout, BackToFront)? {
 		match root.clip {
 			Unclipped => {
@@ -1262,7 +1259,10 @@ expect {
 		.overflow(Hidden, Scroll)
 	child_cfg = fixed_cfg(90, 80).background(Color.gray).overflow(Visible, Visible)
 	match build_and_solve(root_cfg, [child_cfg], { w: 200, h: 200 }) {
-		Ok(layout) => match layout.to_commands({ w: 200, h: 200 }) {
+
+		## A non-empty capacity-reserved buffer must be cleared before it is
+		## refilled; the same owned storage is passed through command generation.
+		Ok(layout) => match layout.to_commands({ w: 200, h: 200 }, List.with_capacity(8).append(Render.scissor_end)) {
 			Ok([Rectangle(_), ScissorStart(bounds), Rectangle(_), Border(_), ScissorEnd]) =>
 				bounds.x == 0 and bounds.y == 0 and bounds.width == 100 and bounds.height == 60
 			_ => Bool.False
@@ -1479,7 +1479,7 @@ node_pos_y = |layout, index| {
 
 first_text_command_y : Layout -> F32
 first_text_command_y = |layout| {
-	match layout.to_commands({ w: 1000, h: 1000 }) {
+	match layout.to_commands({ w: 1000, h: 1000 }, []) {
 		Ok(commands) => {
 			var $y = -1
 			for command in commands {
@@ -1498,7 +1498,7 @@ first_text_command_y = |layout| {
 
 text_command_positions : Layout -> List({ x : F32, y : F32, text : Str })
 text_command_positions = |layout| {
-	match layout.to_commands({ w: 1000, h: 1000 }) {
+	match layout.to_commands({ w: 1000, h: 1000 }, []) {
 		Ok(commands) => {
 			var $positions = []
 			for command in commands {
@@ -1680,7 +1680,7 @@ expect {
 		$layout = open_box($layout, Id("expanded"), cfg)?
 		$layout = close_box($layout)?
 		$layout = $layout.solve({ w: 100, h: 100 })?
-		$layout.to_commands({ w: 100, h: 100 })
+		$layout.to_commands({ w: 100, h: 100 }, [])
 	}
 
 	match build() {
