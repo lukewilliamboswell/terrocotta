@@ -29,6 +29,19 @@ import SceneCamera exposing [Point2]
 import SceneRenderer
 import Warehouse exposing [Bounds3]
 
+## Authored Screwbot assets are embedded from paths relative to this source
+## file. Startup therefore does not depend on the process working directory.
+import "../assets/Inter-Regular.ttf" as inter_font_bytes : List(U8)
+import "../assets/polyhaven-hangar-floor-1k.png" as floor_texture_bytes : List(U8)
+import "../assets/polyhaven-cardboard-box-01-diffuse-1k.png" as crate_texture_bytes : List(U8)
+import "../assets/polyhaven-corrugated-iron-03-1k.png" as wall_texture_bytes : List(U8)
+import "../assets/screwbot-white.png" as white_texture_bytes : List(U8)
+import "../assets/screwbot-scene.fs" as scene_shader_source : Str
+import "../assets/screwbot-floor.fs" as floor_shader_source : Str
+import "../assets/screwbot-robot.fs" as robot_shader_source : Str
+import "../assets/screwbot-emissive.fs" as emissive_shader_source : Str
+import "../assets/screwbot-blur.fs" as blur_shader_source : Str
+
 Model :: Program.State(AppModel, Msg, Draw.Frame, SceneRenderer.SceneParameters)
 
 AppModel : {
@@ -1270,36 +1283,16 @@ update = |model, msg| {
 	)
 }
 
-font_path = "examples/assets/Inter-Regular.ttf"
-
-floor_texture_path = "examples/assets/polyhaven-hangar-floor-1k.png"
-
-crate_texture_path = "examples/assets/polyhaven-cardboard-box-01-diffuse-1k.png"
-
-wall_texture_path = "examples/assets/polyhaven-corrugated-iron-03-1k.png"
-
-white_texture_path = "examples/assets/screwbot-white.png"
-
-scene_shader_path = "examples/assets/screwbot-scene.fs"
-
-floor_shader_path = "examples/assets/screwbot-floor.fs"
-
-robot_shader_path = "examples/assets/screwbot-robot.fs"
-
-emissive_shader_path = "examples/assets/screwbot-emissive.fs"
-
-blur_shader_path = "examples/assets/screwbot-blur.fs"
-
 init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, SceneRenderer.SceneParameters) }, [Exit(I64)])
 init! = |config| {
 	default_font_metrics = Text.metrics!(Text.default_font)
-	font_asset = Draw.load_font!({ path: font_path, size: 32 }).map_err(|_| Exit(1))?
+	font_asset = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 32 }).map_err(|_| Exit(1))?
 	font_metrics = Text.metrics!(font_asset)
 	font = SceneRenderer.font(font_metrics)
-	crate_asset = Assets.Texture.load!(crate_texture_path).map_err(|_| Exit(1))?
-	floor_asset = Assets.Texture.load!(floor_texture_path).map_err(|_| Exit(1))?
-	wall_asset = Assets.Texture.load!(wall_texture_path).map_err(|_| Exit(1))?
-	white_asset = Assets.Texture.load!(white_texture_path).map_err(|_| Exit(1))?
+	crate_asset = Assets.Texture.from_bytes!({ format: Png, bytes: crate_texture_bytes }).map_err(|_| Exit(1))?
+	floor_asset = Assets.Texture.from_bytes!({ format: Png, bytes: floor_texture_bytes }).map_err(|_| Exit(1))?
+	wall_asset = Assets.Texture.from_bytes!({ format: Png, bytes: wall_texture_bytes }).map_err(|_| Exit(1))?
+	white_asset = Assets.Texture.from_bytes!({ format: Png, bytes: white_texture_bytes }).map_err(|_| Exit(1))?
 	crate_asset.set_filter!(Bilinear)
 	floor_asset.set_filter!(Bilinear)
 	wall_asset.set_filter!(Bilinear)
@@ -1313,11 +1306,11 @@ init! = |config| {
 	bloom_a = Draw.RenderTexture.load!({ width: SceneRenderer.bloom_size.width, height: SceneRenderer.bloom_size.height }).map_err(|_| Exit(1))?
 	bloom_b = Draw.RenderTexture.load!({ width: SceneRenderer.bloom_size.width, height: SceneRenderer.bloom_size.height }).map_err(|_| Exit(1))?
 
-	floor_shader = Draw.Shader.load!({ vertex_path: "", fragment_path: floor_shader_path }).map_err(|_| Exit(1))?
-	robot_shader = Draw.Shader.load!({ vertex_path: "", fragment_path: robot_shader_path }).map_err(|_| Exit(1))?
-	emissive_shader = Draw.Shader.load!({ vertex_path: "", fragment_path: emissive_shader_path }).map_err(|_| Exit(1))?
-	blur_shader = Draw.Shader.load!({ vertex_path: "", fragment_path: blur_shader_path }).map_err(|_| Exit(1))?
-	composite_shader = Draw.Shader.load!({ vertex_path: "", fragment_path: scene_shader_path }).map_err(|_| Exit(1))?
+	floor_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: floor_shader_source }).map_err(|_| Exit(1))?
+	robot_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: robot_shader_source }).map_err(|_| Exit(1))?
+	emissive_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: emissive_shader_source }).map_err(|_| Exit(1))?
+	blur_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: blur_shader_source }).map_err(|_| Exit(1))?
+	composite_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: scene_shader_source }).map_err(|_| Exit(1))?
 
 	floor_time = floor_shader.uniform_f32!("time").map_err(|_| Exit(1))?
 	floor_target_uv = floor_shader.uniform_vec2!("targetUv").map_err(|_| Exit(1))?

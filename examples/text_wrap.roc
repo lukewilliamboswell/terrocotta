@@ -16,10 +16,9 @@ import tc.Theme
 import RocRayApp
 import RocRayRenderer
 
-theme = Theme.light
+import "assets/Inter-Regular.ttf" as inter_font_bytes : List(U8)
 
-font_path : Str
-font_path = "examples/assets/Inter-Regular.ttf"
+theme = Theme.light
 
 lorem : Str
 lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer non sem vitae lacus gravida facilisis. Donec porttitor, justo sed luctus feugiat, nibh lorem malesuada enim, sed pulvinar erat lectus id massa."
@@ -40,7 +39,7 @@ Msg : [NoOp]
 
 init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
 init! = |_config| {
-	ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
+	ray_font = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 2 * 18 }).map_err(|_| Exit(1))?
 	rendering = RocRayRenderer.with_font!(ray_font)
 	Ok({ model: { font: rendering.font }, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
