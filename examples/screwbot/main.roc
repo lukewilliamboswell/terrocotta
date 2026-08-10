@@ -29,12 +29,9 @@ import SceneCamera exposing [Point2]
 import SceneRenderer
 import Warehouse exposing [Bounds3]
 
-## Authored Screwbot assets are embedded from paths relative to this source
-## file. Startup therefore does not depend on the process working directory.
+## Small, stable authored assets are embedded from paths relative to this source
+## file. The large material textures are loaded from one explicit asset store.
 import "../assets/Inter-Regular.ttf" as inter_font_bytes : List(U8)
-import "../assets/polyhaven-hangar-floor-1k.png" as floor_texture_bytes : List(U8)
-import "../assets/polyhaven-cardboard-box-01-diffuse-1k.png" as crate_texture_bytes : List(U8)
-import "../assets/polyhaven-corrugated-iron-03-1k.png" as wall_texture_bytes : List(U8)
 import "../assets/screwbot-white.png" as white_texture_bytes : List(U8)
 import "../assets/screwbot-scene.fs" as scene_shader_source : Str
 import "../assets/screwbot-floor.fs" as floor_shader_source : Str
@@ -1291,65 +1288,21 @@ screwbot_manifest = {
 	content: Sha256("480faac50efc42d0425eed8182aca8c907ecc85c95e0af927f26c765f21ab902"),
 }
 
-## The resources every Screwbot renderer needs. Both startup modes produce this
-## same bundle before filters, uniforms, and the renderer are initialized.
-AuthoredAssets : {
-	font : Draw.Font,
-	crate : Assets.Texture,
-	floor : Assets.Texture,
-	wall : Assets.Texture,
-	white : Assets.Texture,
-	floor_shader : Draw.Shader,
-	robot_shader : Draw.Shader,
-	emissive_shader : Draw.Shader,
-	blur_shader : Draw.Shader,
-	composite_shader : Draw.Shader,
-}
-
-embedded_assets! : {} => Try(AuthoredAssets, [AssetLoadFailed])
-embedded_assets! = |_config| {
-	font = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 32 }).map_err(|_| AssetLoadFailed)?
-	crate = Assets.Texture.from_bytes!({ format: Png, bytes: crate_texture_bytes }).map_err(|_| AssetLoadFailed)?
-	floor = Assets.Texture.from_bytes!({ format: Png, bytes: floor_texture_bytes }).map_err(|_| AssetLoadFailed)?
-	wall = Assets.Texture.from_bytes!({ format: Png, bytes: wall_texture_bytes }).map_err(|_| AssetLoadFailed)?
-	white = Assets.Texture.from_bytes!({ format: Png, bytes: white_texture_bytes }).map_err(|_| AssetLoadFailed)?
-	floor_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: floor_shader_source }).map_err(|_| AssetLoadFailed)?
-	robot_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: robot_shader_source }).map_err(|_| AssetLoadFailed)?
-	emissive_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: emissive_shader_source }).map_err(|_| AssetLoadFailed)?
-	blur_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: blur_shader_source }).map_err(|_| AssetLoadFailed)?
-	composite_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: scene_shader_source }).map_err(|_| AssetLoadFailed)?
-	Ok({ font, crate, floor, wall, white, floor_shader, robot_shader, emissive_shader, blur_shader, composite_shader })
-}
-
-disk_assets! : Str => Try(AuthoredAssets, [AssetLoadFailed])
-disk_assets! = |root| {
-	store = Assets.Store.open!(Assets.with_manifest(Assets.absolute_directory(root), screwbot_manifest)).map_err(|_| AssetLoadFailed)?
-	font = Draw.load_store_font!(store, { path: "Inter-Regular.ttf", size: 32 }).map_err(|_| AssetLoadFailed)?
-	crate = store.texture!("polyhaven-cardboard-box-01-diffuse-1k.png").map_err(|_| AssetLoadFailed)?
-	floor = store.texture!("polyhaven-hangar-floor-1k.png").map_err(|_| AssetLoadFailed)?
-	wall = store.texture!("polyhaven-corrugated-iron-03-1k.png").map_err(|_| AssetLoadFailed)?
-	white = store.texture!("screwbot-white.png").map_err(|_| AssetLoadFailed)?
-	floor_shader = Draw.Shader.from_store!(store, { vertex_path: "", fragment_path: "screwbot-floor.fs" }).map_err(|_| AssetLoadFailed)?
-	robot_shader = Draw.Shader.from_store!(store, { vertex_path: "", fragment_path: "screwbot-robot.fs" }).map_err(|_| AssetLoadFailed)?
-	emissive_shader = Draw.Shader.from_store!(store, { vertex_path: "", fragment_path: "screwbot-emissive.fs" }).map_err(|_| AssetLoadFailed)?
-	blur_shader = Draw.Shader.from_store!(store, { vertex_path: "", fragment_path: "screwbot-blur.fs" }).map_err(|_| AssetLoadFailed)?
-	composite_shader = Draw.Shader.from_store!(store, { vertex_path: "", fragment_path: "screwbot-scene.fs" }).map_err(|_| AssetLoadFailed)?
-	Ok({ font, crate, floor, wall, white, floor_shader, robot_shader, emissive_shader, blur_shader, composite_shader })
-}
-
 init! : Program.Config, App.Startup => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, SceneRenderer.SceneParameters) }, [Exit(I64)])
 init! = |config, startup| {
 	default_font_metrics = Text.metrics!(Text.default_font)
-	assets = match startup.read_env!("SCREWBOT_ASSET_ROOT") {
-		Ok(root) => disk_assets!(root).map_err(|_| Exit(1))?
-		Err(NotFound) => embedded_assets!({}).map_err(|_| Exit(1))?
+	store_config = match startup.read_env!("SCREWBOT_ASSET_ROOT") {
+		Ok(root) => Assets.absolute_directory(root)
+		Err(NotFound) => Assets.beside_executable("examples/assets")
 	}
-	font_metrics = Text.metrics!(assets.font)
+	store = Assets.Store.open!(Assets.with_manifest(store_config, screwbot_manifest)).map_err(|_| Exit(1))?
+	font_asset = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 32 }).map_err(|_| Exit(1))?
+	crate_asset = store.texture!("polyhaven-cardboard-box-01-diffuse-1k.png").map_err(|_| Exit(1))?
+	floor_asset = store.texture!("polyhaven-hangar-floor-1k.png").map_err(|_| Exit(1))?
+	wall_asset = store.texture!("polyhaven-corrugated-iron-03-1k.png").map_err(|_| Exit(1))?
+	white_asset = Assets.Texture.from_bytes!({ format: Png, bytes: white_texture_bytes }).map_err(|_| Exit(1))?
+	font_metrics = Text.metrics!(font_asset)
 	font = SceneRenderer.font(font_metrics)
-	crate_asset = assets.crate
-	floor_asset = assets.floor
-	wall_asset = assets.wall
-	white_asset = assets.white
 	crate_asset.set_filter!(Bilinear)
 	floor_asset.set_filter!(Bilinear)
 	wall_asset.set_filter!(Bilinear)
@@ -1363,11 +1316,11 @@ init! = |config, startup| {
 	bloom_a = Draw.RenderTexture.load!({ width: SceneRenderer.bloom_size.width, height: SceneRenderer.bloom_size.height }).map_err(|_| Exit(1))?
 	bloom_b = Draw.RenderTexture.load!({ width: SceneRenderer.bloom_size.width, height: SceneRenderer.bloom_size.height }).map_err(|_| Exit(1))?
 
-	floor_shader = assets.floor_shader
-	robot_shader = assets.robot_shader
-	emissive_shader = assets.emissive_shader
-	blur_shader = assets.blur_shader
-	composite_shader = assets.composite_shader
+	floor_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: floor_shader_source }).map_err(|_| Exit(1))?
+	robot_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: robot_shader_source }).map_err(|_| Exit(1))?
+	emissive_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: emissive_shader_source }).map_err(|_| Exit(1))?
+	blur_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: blur_shader_source }).map_err(|_| Exit(1))?
+	composite_shader = Draw.Shader.from_source!({ vertex_source: "", fragment_source: scene_shader_source }).map_err(|_| Exit(1))?
 
 	floor_time = floor_shader.uniform_f32!("time").map_err(|_| Exit(1))?
 	floor_target_uv = floor_shader.uniform_vec2!("targetUv").map_err(|_| Exit(1))?
@@ -1386,7 +1339,7 @@ init! = |config, startup| {
 		floor: floor_asset,
 		wall: wall_asset,
 		white: white_asset,
-		font: assets.font,
+		font: font_asset,
 		scene_target,
 		bloom_a,
 		bloom_b,
