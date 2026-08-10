@@ -26,8 +26,8 @@ AppModel : { attach : Element.AttachPoint }
 
 Msg : Element.AttachPoint
 
-init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
-init! = |_config| {
+init! : Program.Config, App.Startup => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
+init! = |_config, _startup| {
 	rendering = RocRayRenderer.default!({})
 	Ok({ model: { attach: Center }, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }

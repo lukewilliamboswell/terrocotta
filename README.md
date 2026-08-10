@@ -38,6 +38,7 @@ NB: Theming and widgets are just proof of concept implementations. Users are exp
 
 - [Architecture Overview](docs/architecture.md)
 - [Text Measurement Cache](docs/text_cache.md)
+- [Screwbot asset modes](docs/screwbot_assets.md)
 
 ## Examples
 

@@ -137,8 +137,8 @@ update = |model, msg| {
 	)
 }
 
-init! : Program.Config => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
-init! = |_config| {
+init! : Program.Config, App.Startup => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }, [Exit(I64)])
+init! = |_config, _startup| {
 	ray_font = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 2 * 16 }).map_err(|_| Exit(1))?
 	rendering = RocRayRenderer.with_font!(ray_font)
 	model = {

@@ -4,9 +4,10 @@
 ## Usage:
 ##   program = Program.new!({ config, init!, view, update })
 ##
-## `init!` returns the initial model, a pure text measurer, and one retained
-## command renderer. Programs derive compact render data from a pre-event model
-## rather than retaining that model for rendering.
+## `init!` receives the platform startup capability and returns the initial
+## model, a pure text measurer, and one retained command renderer. Programs
+## derive compact render data from a pre-event model rather than retaining that
+## model for rendering.
 import Layout
 import LayoutTypes
 import Render
@@ -208,7 +209,7 @@ Program :: [].{
 	## projection or when platform step/frame hooks need customization.
 	new! : {
 		config : Config,
-		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, {}) }, [Exit(I64)]),
+		init! : Config, startup => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, {}) }, [Exit(I64)]),
 		view : m -> Element.View(msg),
 		update : m, msg -> StepResult(m, action, task),
 	} -> {
@@ -240,7 +241,7 @@ Program :: [].{
 	## shaders or uniforms; Program stores no second app model.
 	custom! : {
 		config : Config,
-		init! : Config => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, data) }, [Exit(I64)]),
+		init! : Config, startup => Try({ model : m, measure_text : Render.MeasureText, renderer : Render.Adapter(draw_frame, data) }, [Exit(I64)]),
 		on_step : m, Step(msg, input, mouse, window, time, step) -> StepResult(m, action, task),
 		on_frame : m, Frame -> m,
 		render_data : m, Frame -> data,
@@ -252,8 +253,8 @@ Program :: [].{
 		render! : State(m, msg, draw_frame, data), draw_frame => Try({}, [Exit(I64), ..]),
 	}
 	custom! = |{ config, init!, on_step, on_frame, render_data, view, update }| {
-		init_state! = |_startup| {
-			initialized = init!(config)?
+		init_state! = |startup| {
+			initialized = init!(config, startup)?
 			initial_frame = {
 				delta_seconds: 0,
 				timestamp_nanos: 0,
