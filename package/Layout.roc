@@ -4,6 +4,7 @@
 import Assets
 import Color
 import Element exposing [default_font]
+import Font
 import Event
 import Floating exposing [Clip.*, ZOrder.*]
 import Identity exposing [NodeId]
@@ -356,9 +357,12 @@ resolve_box_text = |layout, style| {
 	}
 }
 
-resolve_font : Element.Font, Element.Font -> Element.Font
+resolve_font : Font.Font, Font.Font -> Font.Font
 resolve_font = |cfg_font, fallback_font|
-	if (Box.unbox(cfg_font)) == 0.U64 fallback_font else cfg_font
+	match cfg_font {
+		DefaultFont => fallback_font
+		CustomFont(_) => cfg_font
+	}
 
 ## Resolve a public floating declaration into the node's internal placement.
 resolve_placement : Layout(draw), ParentIndex, Element.Floating -> Try(LayoutTypes.Placement, [OutOfBounds, ..])

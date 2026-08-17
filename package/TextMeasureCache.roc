@@ -1,5 +1,6 @@
 ## Persistent cache for host text measurements.
 import Element
+import Font
 import Text
 
 TextMeasureCache :: {
@@ -60,7 +61,7 @@ TextMeasureCache :: {
 	key = |content, config| {
 		{
 			text: content,
-			font: Box.unbox(config.font),
+			font: Font.font_key(config.font),
 			font_size: config.font_size,
 			spacing: config.spacing,
 		}
@@ -169,7 +170,8 @@ expect {
 	base = Element.default_text
 	base_key = TextMeasureCache.key("same text", base)
 	render_key = TextMeasureCache.key("same text", { ..base, color: { r: 1, g: 2, b: 3, a: 4 }, align: Right, wrap: None, line_height: 50 })
-	font_key = TextMeasureCache.key("same text", { ..base, font: Box.box(99) })
+	custom_font = Font.custom_font({ key: 99, measure!: |_config| { width: 0, height: 0 }, draw!: |_config| {} })
+	font_key = TextMeasureCache.key("same text", { ..base, font: custom_font })
 	size_key = TextMeasureCache.key("same text", { ..base, font_size: base.font_size + 1 })
 	spacing_key = TextMeasureCache.key("same text", { ..base, spacing: base.spacing + 1 })
 	content_key = TextMeasureCache.key("different text", base)

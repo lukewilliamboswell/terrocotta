@@ -3,13 +3,12 @@
 import Color
 import Assets
 import Event
+import Font
 
 Element := [].{
 
-	Font : Box(U64)
-
-	default_font : Font
-	default_font = Box.box(0)
+	default_font : Font.Font
+	default_font = DefaultFont
 
 	Sizing : [
 		# Size to content, clamped to min/max pixels.
@@ -147,7 +146,7 @@ Element := [].{
 
 	TextConfig : {
 		# Text font.
-		font : Font,
+		font : Font.Font,
 		# Text font size (in px).
 		font_size : F32,
 		# Space between glyphs (in px).
@@ -204,7 +203,7 @@ Element := [].{
 		}
 
 		# TextConfig
-		font_family : BoxConfig, Font -> BoxConfig
+		font_family : BoxConfig, Font.Font -> BoxConfig
 		font_family = |self, font| {
 			text = match self.text {
 				Auto => default_text

@@ -2,6 +2,7 @@
 import Assets
 import Color
 import Element
+import Font
 
 RenderVector2 : { x : F32, y : F32 }
 
@@ -84,7 +85,7 @@ RenderTextRawConfig := {
 	font_size : F32,
 	spacing : F32,
 	color : Color,
-	font : Element.Font,
+	font : Font.Font,
 }
 
 RenderImageRaw := {
@@ -99,7 +100,7 @@ RenderMeasureTextRaw : {
 	text : Str,
 	size : F32,
 	spacing : F32,
-	font : U64,
+	font : Font.Font,
 }
 
 RenderTextSize : { width : F32, height : F32 }

@@ -5,7 +5,8 @@ import rr.App
 import rr.Host
 import rr.Draw
 import tc.Color
-import tc.Element exposing [Font, View, box, style]
+import tc.Element exposing [View, box, style]
+import tc.Font
 import tc.Layout
 import tc.Program
 import tc.Render
@@ -14,7 +15,7 @@ import tc.Widget
 
 Model : Program.State(AppModel, Msg)
 
-AppModel : { theme : Theme, font : Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
+AppModel : { theme : Theme, font : Font.Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
 
 Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool)]
 

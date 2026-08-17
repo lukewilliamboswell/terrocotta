@@ -1,5 +1,6 @@
 ## Text measurement and wrapping helpers for layout.
 import Element
+import Font
 import Render
 
 Text := [].{
@@ -37,7 +38,7 @@ Text := [].{
 		contains_newlines : Bool,
 	}
 
-	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : U64 } => Render.TextSize
+	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : Font.Font } => Render.TextSize
 
 	measure! : Str, Element.TextConfig, MeasureTextFn => Measured
 	measure! = |content, config, measure_text!| {
@@ -114,7 +115,7 @@ measure_raw! = |measure_text!, config, content| {
 		text: content,
 		size: config.font_size,
 		spacing: config.spacing,
-		font: Box.unbox(config.font),
+		font: config.font,
 	})
 }
 

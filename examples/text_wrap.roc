@@ -8,7 +8,8 @@ import rr.App
 import rr.Draw
 import rr.Host
 import tc.Color
-import tc.Element exposing [Font, TextWrap.*, View, box, default_font, style, text]
+import tc.Element exposing [TextWrap.*, View, box, default_font, style, text]
+import tc.Font
 import tc.Program
 import tc.Render
 import tc.Theme
@@ -30,25 +31,26 @@ none_lorem = "Short raw line."
 Model : Program.State(AppModel, Msg)
 
 AppModel : {
-	font : Font,
+	font : Font.Font,
 }
 
 Msg : [NoOp]
 
 init! : Host => Try(AppModel, [Exit(U64), ..])
 init! = |_host| {
-	_ = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
-	Ok({ font: default_font })
+	ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
+	font = Font.custom_font({
+		key: 1,
+		measure!: |config| Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: ray_font }),
+		draw!: |_config| {},
+	})
+	Ok({ font: font })
 }
 
 measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| {
-	Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: Draw.default_font,
-	})
+measure_text! = |config| match config.font {
+	DefaultFont => Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: Draw.default_font })
+	CustomFont(resource) => Font.measure_font!(resource, { text: config.text, size: config.size, spacing: config.spacing })
 }
 
 update : AppModel, Msg -> AppModel

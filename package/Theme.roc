@@ -1,6 +1,7 @@
 ## Application-wide visual defaults derived from a palette seed.
 import Color
 import Element
+import Font
 import Palette
 
 ## A compact theme containing colors and common visual sizing defaults.
@@ -10,7 +11,7 @@ Theme := {
 	palette : Palette.Palette,
 
 	## Default font used by text elements.
-	font : Element.Font,
+	font : Font.Font,
 
 	## Base text size in pixels.
 	font_size : F32,
@@ -23,7 +24,7 @@ Theme := {
 }.{
 	is_eq : Theme, Theme -> Bool
 	is_eq = |a, b| {
-		a.palette == b.palette and a.font.unbox() == b.font.unbox() and a.font_size == b.font_size and a.radius == b.radius and a.gap == b.gap
+		a.palette == b.palette and Font.font_key(a.font) == Font.font_key(b.font) and a.font_size == b.font_size and a.radius == b.radius and a.gap == b.gap
 	}
 
 	## Generate a theme from a palette seed.

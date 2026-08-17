@@ -9,7 +9,8 @@ import rr.Draw
 import rr.Host
 import rr.Assets as RRAssets
 
-import tc.Element exposing [Font, View, box, default_font, image, style]
+import tc.Element exposing [View, box, default_font, image, style]
+import tc.Font
 import tc.Program
 import tc.Render
 import tc.Theme
@@ -38,7 +39,7 @@ index_to_sizing = |index| match index {
 Model : Program.State(AppModel, Msg)
 
 AppModel : {
-	font : Font,
+	font : Font.Font,
 	texture : Texture,
 	select_width : { open : Bool, selected : U64 },
 	select_height : { open : Bool, selected : U64 },
@@ -53,11 +54,11 @@ Msg : [
 
 init! : Host => Try(AppModel, [Exit(U64), ..])
 init! = |_host| {
-	_ = RRAssets.load_texture!(image_path).map_err(|_| Exit(1))?
+	texture = RRAssets.Texture.load!(image_path).map_err(|_| Exit(1))?
 	Ok({
 		font: default_font,
 		# Placeholder texture; tc.Assets.load_texture! is not wired up yet.
-		texture: Box.box({ handle: 0, width: 100, height: 100 }),
+		texture: texture,
 		select_width: { open: False, selected: 2 },
 		select_height: { open: False, selected: 2 },
 	})
