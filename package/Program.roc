@@ -6,24 +6,8 @@ import Element
 import Event
 import Drag
 import Font exposing [Measurable]
+import rrt.Keys as RrtKeys
 import rrt.Mouse as RrtMouse
-
-HostState : {
-	keys : List(U8),
-	keys_pressed : List(U8),
-	keys_released : List(U8),
-	mouse : {
-		buttons : List(U8),
-		buttons_pressed : List(U8),
-		buttons_released : List(U8),
-		left : Bool,
-		middle : Bool,
-		right : Bool,
-		wheel : F32,
-		x : F32,
-		y : F32,
-	},
-}
 
 EventBindings(msg) : Dict(U64, List(Event.Handler(msg)))
 
@@ -57,32 +41,6 @@ default_scroll_state = {
 	scroll_origin: { x: 0, y: 0 },
 	momentum_time: 0,
 }
-
-## Adapt RocRay's package-owned input values to Terrocotta's event snapshot.
-build_input : { keys : List(U8), mouse : RrtMouse.State, ..input_state } -> HostState
-build_input = |input| {
-	{
-		keys: derive(input.keys, 1),
-		keys_pressed: derive(input.keys, 2),
-		keys_released: derive(input.keys, 4),
-		mouse: {
-			buttons: derive(input.mouse.buttons, 1),
-			buttons_pressed: derive(input.mouse.buttons, 2),
-			buttons_released: derive(input.mouse.buttons, 4),
-			left: input.mouse.left,
-			middle: input.mouse.middle,
-			right: input.mouse.right,
-			wheel: input.mouse.wheel_y,
-			x: input.mouse.x,
-			y: input.mouse.y,
-		},
-	}
-}
-
-## Expand packed per-key/button state bytes into per-index 0/1 lists.
-derive : List(U8), U8 -> List(U8)
-derive = |states, mask|
-	List.map(states, |byte| if U8.bitwise_and(byte, mask) != 0 1 else 0)
 
 Program :: [].{
 	Start(model, font) := [
@@ -173,11 +131,10 @@ Program :: [].{
 		update : model, msg -> model,
 	} -> Try(State(model, msg, font), Layout.LayoutError)
 		where [font.Measurable]
-	step = |{ state, input: input_snapshot, viewport, messages: task_messages, view, update }| {
-		input = build_input(input_snapshot)
+	step = |{ state, input, viewport, messages: task_messages, view, update }| {
 		screen = { w: viewport.width.to_f32(), h: viewport.height.to_f32() }
 
-		scroll = update_scroll_containers(state.layout, state.scroll, { x: input.mouse.x, y: input.mouse.y }, input.mouse.wheel)?
+		scroll = update_scroll_containers(state.layout, state.scroll, input.mouse.position(), input.mouse.wheel_delta())?
 		{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag)?
 
 		var $model = state.model
@@ -226,8 +183,9 @@ clamp_scroll_axis = |mode, current, content, viewport| {
 	}
 }
 
-## Clamp retained state and apply wheel input to the deepest hovered container.
-update_scroll_containers : Layout(draw), Dict(U64, ScrollState), LayoutTypes.Pos, F32 -> Try(Dict(U64, ScrollState), Layout.LayoutError)
+## Clamp retained state and apply each wheel axis to the deepest hovered
+## container that scrolls on that axis.
+update_scroll_containers : Layout(draw), Dict(U64, ScrollState), LayoutTypes.Pos, LayoutTypes.Pos -> Try(Dict(U64, ScrollState), Layout.LayoutError)
 update_scroll_containers = |layout, scroll, pointer, wheel| {
 	hovered = layout.hover_path(pointer)?
 	containers = layout.scroll_containers()
@@ -241,12 +199,23 @@ update_scroll_containers = |layout, scroll, pointer, wheel| {
 			$scroll = $scroll.insert(node.id, { ..current, position })
 		}
 	}
-	if wheel != 0 {
-		match deepest_vertical_scroll_target(containers, hovered) {
+	if wheel.x != 0 {
+		match deepest_scroll_target(containers, hovered, XAxis) {
 			ScrollTarget(node_id) => {
 				data = layout.get_scroll_container_data(node_id)
 				current = $scroll.get(node_id).ok_or(default_scroll_state)
-				next_y = clamp_scroll_axis(data.overflow.y, current.position.y + wheel * 10, data.content_dimensions.h, data.scroll_container_dimensions.h)
+				next_x = clamp_scroll_axis(data.overflow.x, current.position.x + wheel.x * 10, data.content_dimensions.w, data.scroll_container_dimensions.w)
+				$scroll = $scroll.insert(node_id, { ..current, position: { ..current.position, x: next_x } })
+			}
+			NoScrollTarget => {}
+		}
+	}
+	if wheel.y != 0 {
+		match deepest_scroll_target(containers, hovered, YAxis) {
+			ScrollTarget(node_id) => {
+				data = layout.get_scroll_container_data(node_id)
+				current = $scroll.get(node_id).ok_or(default_scroll_state)
+				next_y = clamp_scroll_axis(data.overflow.y, current.position.y + wheel.y * 10, data.content_dimensions.h, data.scroll_container_dimensions.h)
 				$scroll = $scroll.insert(node_id, { ..current, position: { ..current.position, y: next_y } })
 			}
 			NoScrollTarget => {}
@@ -263,14 +232,18 @@ ScrollCandidate : {
 	scroll_position : LayoutTypes.Pos,
 }
 
-## Select the deepest hovered container that can scroll vertically.
-deepest_vertical_scroll_target : List(ScrollCandidate), List(U64) -> [ScrollTarget(U64), NoScrollTarget]
-deepest_vertical_scroll_target = |containers, hovered| {
+## Select the deepest hovered container that can scroll on an axis.
+deepest_scroll_target : List(ScrollCandidate), List(U64), LayoutTypes.Axis -> [ScrollTarget(U64), NoScrollTarget]
+deepest_scroll_target = |containers, hovered, axis| {
 	var $target = NoScrollTarget
 	for node_id in hovered {
 		if $target == NoScrollTarget {
 			for data in containers {
-				if data.id == node_id and scrolls_axis(data.overflow.y) {
+				overflow = match axis {
+					XAxis => data.overflow.x
+					YAxis => data.overflow.y
+				}
+				if data.id == node_id and scrolls_axis(overflow) {
 					$target = ScrollTarget(node_id)
 				}
 			}
@@ -282,84 +255,56 @@ deepest_vertical_scroll_target = |containers, hovered| {
 default_box_status : Element.BoxStatus
 default_box_status = { hovered: Bool.False, pressed: Bool.False, focused: Bool.False, disabled: Bool.False }
 
-get_box_status : U64, List(U64), U64, HostState -> Element.BoxStatus
-get_box_status = |node_index, prev_hovered, focused, host| {
+get_box_status : U64, List(U64), U64, { mouse : RrtMouse.State, ..input } -> Element.BoxStatus
+get_box_status = |node_index, prev_hovered, focused, input| {
 	hovered = prev_hovered.contains(node_index)
-	{ hovered, pressed: hovered and host.mouse.left, focused: node_index == focused, disabled: Bool.False }
+	{ hovered, pressed: hovered and input.mouse.button_down(Left), focused: node_index == focused, disabled: Bool.False }
 }
 
-is_mouse_button_pressed : List(U8), U64 -> Bool
-is_mouse_button_pressed = |states, button|
-	match states.get(button) {
-		Ok(state) => U8.bitwise_and(state, 1) != 0
-		Err(_) => Bool.False
-	}
-
-is_key_pressed : List(U8), U64 -> Bool
-is_key_pressed = |states, key|
-	match states.get(key) {
-		Ok(state) => U8.bitwise_and(state, 1) != 0
-		Err(_) => Bool.False
-	}
-
-handle_events : Layout(draw), EventBindings(msg), HostState, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
-handle_events = |layout, event_bindings, host, prev_hovered, prev_focused, drag_state| {
+handle_events : Layout(draw), EventBindings(msg), { keys : List(U8), mouse : RrtMouse.State, ..input }, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events = |layout, event_bindings, input, prev_hovered, prev_focused, drag_state| {
 	root_index = 0
-	pointer = { x: host.mouse.x, y: host.mouse.y }
+	pointer = input.mouse.position()
 	hovered = layout.hover_path(pointer)?
 
 	# OnPointerEnter/OnPointerLeave/OnHover
 	var $msgs = get_pointer_enter_events(event_bindings, prev_hovered, hovered)
 	$msgs = $msgs.concat(get_pointer_leave_events(event_bindings, prev_hovered, hovered))
 	$msgs = $msgs.concat(get_hover_events(event_bindings, hovered))
-	$msgs = $msgs.concat(get_pointer_events(layout, event_bindings, hovered, host)?)
+	$msgs = $msgs.concat(get_pointer_events(layout, event_bindings, hovered, input.mouse)?)
 
-	# OnClick
-	mouse_left_button = 0
-	if is_mouse_button_pressed(host.mouse.buttons_pressed, mouse_left_button) and hovered.len() > 0 {
+	# Targeted pointer button events. OnClick retains its current primary-button
+	# press behavior; the explicit phase handlers expose every mouse button.
+	if input.mouse.button_pressed(Left) and hovered.len() > 0 {
 		node_index = hovered.get(0)?
 		$msgs = $msgs.concat(get_click_events(event_bindings, node_index))
 	}
+	if hovered.len() > 0 {
+		node_index = hovered.get(0)?
+		$msgs = $msgs.concat(get_pointer_button_events(event_bindings, node_index, input.mouse))
+	}
 
-	focused = if is_mouse_button_pressed(host.mouse.buttons_pressed, mouse_left_button) {
+	focused = if input.mouse.button_pressed(Left) {
 		hovered.get(0).ok_or(root_index)
 	} else {
 		prev_focused
 	}
 
 	# Key events
-	$msgs = $msgs.concat(get_key_events(event_bindings, focused, host.keys_pressed, host.keys, host.keys_released))
+	$msgs = $msgs.concat(get_key_events(event_bindings, focused, input))
 
 	# Drag gestures
-	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, drag_state, host.mouse)?
+	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, drag_state, input.mouse)?
 	$msgs = $msgs.concat(drag_msgs)
 
 	Ok({ messages: $msgs, hovered, focused, drag })
 }
 
-pointer_button_state : HostState, U64 -> Event.PointerButtonState
-pointer_button_state = |host, button| {
-	{
-		down: is_mouse_button_pressed(host.mouse.buttons, button),
-		pressed: is_mouse_button_pressed(host.mouse.buttons_pressed, button),
-		released: is_mouse_button_pressed(host.mouse.buttons_released, button),
-	}
-}
-
-pointer_buttons : HostState -> Event.PointerButtons
-pointer_buttons = |host| {
-	{
-		left: pointer_button_state(host, 0),
-		middle: pointer_button_state(host, 1),
-		right: pointer_button_state(host, 2),
-	}
-}
-
-pointer_event : Layout(draw), U64, HostState -> Try(Event.PointerEvent, Layout.LayoutError)
-pointer_event = |layout, node_id, host| {
+pointer_event : Layout(draw), U64, RrtMouse.State -> Try(Event.PointerEvent, Layout.LayoutError)
+pointer_event = |layout, node_id, mouse| {
 	Ok({
-		position: { x: host.mouse.x, y: host.mouse.y },
-		buttons: pointer_buttons(host),
+		position: mouse.position(),
+		mouse,
 		target: {
 			id: node_id,
 			bounds: layout.node_bounds(node_id)?,
@@ -441,11 +386,11 @@ get_hover_events = |bindings, hovered| {
 		)
 }
 
-get_pointer_events : Layout(draw), EventBindings(msg), List(U64), HostState -> Try(List(msg), Layout.LayoutError)
-get_pointer_events = |layout, bindings, hovered, host| {
+get_pointer_events : Layout(draw), EventBindings(msg), List(U64), RrtMouse.State -> Try(List(msg), Layout.LayoutError)
+get_pointer_events = |layout, bindings, hovered, mouse| {
 	var $msgs = []
 	for node_index in hovered {
-		event = pointer_event(layout, node_index, host)?
+		event = pointer_event(layout, node_index, mouse)?
 		$msgs = $msgs.concat(
 			bindings
 				.get(node_index)
@@ -465,6 +410,25 @@ get_pointer_events = |layout, bindings, hovered, host| {
 	Ok($msgs)
 }
 
+get_pointer_button_events : EventBindings(msg), U64, RrtMouse.State -> List(msg)
+get_pointer_button_events = |bindings, node_index, mouse| {
+	bindings
+		.get(node_index)
+		.ok_or([])
+		.iter()
+		.fold(
+			[],
+			|msgs, event| {
+				match event {
+					OnPointerPressed(button, msg) => if mouse.button_pressed(button) msgs.append(msg) else msgs
+					OnPointerDown(button, msg) => if mouse.button_down(button) msgs.append(msg) else msgs
+					OnPointerReleased(button, msg) => if mouse.button_released(button) msgs.append(msg) else msgs
+					_ => msgs
+				}
+			},
+		)
+}
+
 get_click_events : EventBindings(msg), U64 -> List(msg)
 get_click_events = |bindings, node_index| {
 	bindings
@@ -482,8 +446,8 @@ get_click_events = |bindings, node_index| {
 		)
 }
 
-get_key_events : EventBindings(msg), U64, List(U8), List(U8), List(U8) -> List(msg)
-get_key_events = |bindings, focused, keys_pressed, keys_down, keys_released| {
+get_key_events : EventBindings(msg), U64, { keys : List(U8), ..input } -> List(msg)
+get_key_events = |bindings, focused, input| {
 	bindings
 		.get(focused)
 		.ok_or([])
@@ -492,17 +456,17 @@ get_key_events = |bindings, focused, keys_pressed, keys_down, keys_released| {
 			[],
 			|msgs, binding| {
 				match binding {
-					OnKeyPressed(key, msg) => if is_key_pressed(keys_pressed, key) {
+					OnKeyPressed(key, msg) => if RrtKeys.key_pressed(input, key) {
 						msgs.append(msg)
 					} else {
 						msgs
 					}
-					OnKeyDown(key, msg) => if is_key_pressed(keys_down, key) {
+					OnKeyDown(key, msg) => if RrtKeys.key_down(input, key) {
 						msgs.append(msg)
 					} else {
 						msgs
 					}
-					OnKeyUp(key, msg) => if is_key_pressed(keys_released, key) {
+					OnKeyReleased(key, msg) => if RrtKeys.key_released(input, key) {
 						msgs.append(msg)
 					} else {
 						msgs
@@ -557,7 +521,62 @@ expect {
 		overflow: { x: Hidden, y: Scroll },
 		scroll_position: { x: 0, y: 0 },
 	}
-	deepest_vertical_scroll_target([outer, inner], [2, 1]) == ScrollTarget(2)
+	deepest_scroll_target([outer, inner], [2, 1], YAxis) == ScrollTarget(2)
+}
+
+## Wheel routing selects independently by axis.
+expect {
+	horizontal = {
+		id: 3,
+		scroll_container_dimensions: { w: 100, h: 100 },
+		content_dimensions: { w: 300, h: 100 },
+		overflow: { x: Scroll, y: Hidden },
+		scroll_position: { x: 0, y: 0 },
+	}
+	deepest_scroll_target([horizontal], [3], XAxis) == ScrollTarget(3)
+		and deepest_scroll_target([horizontal], [3], YAxis) == NoScrollTarget
+}
+
+## Packed key bits are queried directly through rrt.Keys.
+expect {
+	bindings = Dict.empty().insert(
+		1,
+		[
+			OnKeyPressed(Raw(0), "pressed"),
+			OnKeyDown(Raw(0), "down"),
+			OnKeyReleased(Raw(0), "released"),
+		],
+	)
+	get_key_events(bindings, 1, { keys: [7] }) == ["pressed", "down", "released"]
+}
+
+pointer_button_test_mouse : RrtMouse.State
+pointer_button_test_mouse = {
+	buttons: [3, 4],
+	left: Bool.True,
+	middle: Bool.False,
+	right: Bool.False,
+	wheel: 0,
+	wheel_x: 0,
+	wheel_y: 0,
+	delta_x: 2,
+	delta_y: 3,
+	x: 10,
+	y: 20,
+}
+
+## Pointer phase handlers share RocRay's packed mouse-button semantics.
+expect {
+	bindings = Dict.empty().insert(
+		1,
+		[
+			OnPointerPressed(Left, "left-pressed"),
+			OnPointerDown(Left, "left-down"),
+			OnPointerReleased(Right, "right-released"),
+			OnPointerReleased(Left, "left-released"),
+		],
+	)
+	get_pointer_button_events(bindings, 1, pointer_button_test_mouse) == ["left-pressed", "left-down", "right-released"]
 }
 
 expect {

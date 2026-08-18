@@ -12,6 +12,7 @@ import Element
 import Event
 import Layout
 import LayoutTypes
+import rrt.Mouse as RrtMouse
 
 Drag := [].{
 
@@ -53,7 +54,7 @@ Drag := [].{
 	## of what is under the pointer. The per-frame button snapshot is derived
 	## from the structural mouse record passed in.
 	advance :
-		Layout(draw), Dict(U64, List(Event.Handler(msg))), List(U64), DragState, { x : F32, y : F32, buttons : List(U8), buttons_pressed : List(U8), buttons_released : List(U8), .. } -> Try({ drag : DragState, messages : List(msg) }, Layout.LayoutError)
+		Layout(draw), Dict(U64, List(Event.Handler(msg))), List(U64), DragState, { x : F32, y : F32, buttons : List(U8), .. } -> Try({ drag : DragState, messages : List(msg) }, Layout.LayoutError)
 	advance = |layout, bindings, hovered, drag_state, mouse| {
 		input = {
 			pointer: { x: mouse.x, y: mouse.y },
@@ -194,24 +195,15 @@ Drag := [].{
 		)
 	}
 
-	## Whether a mouse button list reports the given button as active.
-	mouse_button : List(U8), U64 -> Bool
-	mouse_button = |states, button|
-		match states.get(button) {
-			Ok(state) => state == 1
-			Err(_) => Bool.False
-		}
-
 	## Derive the left button lifecycle for this frame from the raw mouse state.
 	left_button :
-		{ x : F32, y : F32, buttons : List(U8), buttons_pressed : List(U8), buttons_released : List(U8), .. } -> MouseButton
+		{ buttons : List(U8), .. } -> MouseButton
 	left_button = |mouse| {
-		left_id = 0
-		if mouse_button(mouse.buttons_pressed, left_id) {
+		if RrtMouse.button_pressed(mouse, Left) {
 			Pressed
-		} else if mouse_button(mouse.buttons_released, left_id) {
+		} else if RrtMouse.button_released(mouse, Left) {
 			Released
-		} else if mouse_button(mouse.buttons, left_id) {
+		} else if RrtMouse.button_down(mouse, Left) {
 			Down
 		} else {
 			Idle
@@ -261,9 +253,7 @@ expect {
 			input = {
 				x: drag_test_press.x,
 				y: drag_test_press.y,
-				buttons: [1],
-				buttons_pressed: [1],
-				buttons_released: [],
+				buttons: [3],
 			}
 			result = Drag.advance(layout, bindings, hovered, Idle, input)?
 			result.messages == ["start"]
@@ -293,16 +283,12 @@ expect {
 			press_input = {
 				x: drag_test_press.x,
 				y: drag_test_press.y,
-				buttons: [1],
-				buttons_pressed: [1],
-				buttons_released: [],
+				buttons: [3],
 			}
 			move_input = {
 				x: 150,
 				y: 150,
 				buttons: [1],
-				buttons_pressed: [],
-				buttons_released: [],
 			}
 			started = Drag.advance(layout, bindings, hovered, Idle, press_input)?
 			moved = Drag.advance(layout, bindings, [root_id], started.drag, move_input)?
@@ -341,16 +327,12 @@ expect {
 			press_input = {
 				x: drag_test_press.x,
 				y: drag_test_press.y,
-				buttons: [1],
-				buttons_pressed: [1],
-				buttons_released: [],
+				buttons: [3],
 			}
 			release_input = {
 				x: 150,
 				y: 150,
-				buttons: [],
-				buttons_pressed: [],
-				buttons_released: [1],
+				buttons: [4],
 			}
 			started = Drag.advance(layout, bindings, hovered, Idle, press_input)?
 			released = Drag.advance(layout, bindings, [root_id], started.drag, release_input)?
@@ -374,9 +356,7 @@ expect {
 			input = {
 				x: drag_test_press.x,
 				y: drag_test_press.y,
-				buttons: [1],
-				buttons_pressed: [1],
-				buttons_released: [],
+				buttons: [3],
 			}
 			result = Drag.advance(layout, bindings, hovered, Idle, input)?
 			result.messages == []
@@ -399,8 +379,6 @@ expect {
 				x: drag_test_press.x,
 				y: drag_test_press.y,
 				buttons: [],
-				buttons_pressed: [],
-				buttons_released: [],
 			}
 			result = Drag.advance(layout, bindings, hovered, Idle, input)?
 			result.messages == []
@@ -428,16 +406,12 @@ expect {
 			press_input = {
 				x: drag_test_press.x,
 				y: drag_test_press.y,
-				buttons: [1],
-				buttons_pressed: [1],
-				buttons_released: [],
+				buttons: [3],
 			}
 			gap_input = {
 				x: 150,
 				y: 150,
 				buttons: [],
-				buttons_pressed: [],
-				buttons_released: [],
 			}
 			started = Drag.advance(layout, bindings, hovered, Idle, press_input)?
 			gapped = Drag.advance(layout, bindings, [root_id], started.drag, gap_input)?
@@ -467,9 +441,7 @@ expect {
 			input = {
 				x: 5,
 				y: 5,
-				buttons: [1],
-				buttons_pressed: [1],
-				buttons_released: [],
+				buttons: [3],
 			}
 			result = Drag.advance(layout, bindings, hovered, Idle, input)?
 			result.messages == ["start"]

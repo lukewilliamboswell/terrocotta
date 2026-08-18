@@ -7,6 +7,7 @@ app [Model, Msg, program] {
 
 import rr.App
 import rr.Draw
+#import rr.Keys
 
 import tc.Element exposing [box, text, View, style]
 import tc.Font
@@ -42,7 +43,7 @@ view = |model| {
 			.background(theme.palette.background.base.fill)
 			.font_size(theme.font_size)
 			.font_color(theme.palette.background.base.content),
-		[],
+		[OnKeyPressed(KeyUp, Increment), OnKeyPressed(KeyDown, Decrement)],
 		[
 			box(
 				Auto,
