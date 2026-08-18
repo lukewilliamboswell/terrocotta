@@ -90,13 +90,13 @@ Program :: [].{
 
 			match result {
 				Ok(next_state) => ray_step.static(next_state)
-				Err(_) => ray_step.exit(state, 1)
+				Err(_) => ray_step.static(state).with_action(Exit(1))
 			}
 		}
 
 		render! = |state, frame| {
 			commands = state.layout.to_commands(state.screen).map_err(|_| Exit(1))?
-			Render.draw_commands!(frame, commands, |color| frame.from_rgba(color))
+			Render.draw_commands!(frame, commands)
 		}
 
 		{
