@@ -85,6 +85,12 @@ derive = |states, mask|
 	List.map(states, |byte| if U8.bitwise_and(byte, mask) != 0 1 else 0)
 
 Program :: [].{
+	Start(model, font) := [
+		Start({
+			model : model,
+			font : Font.Handle(font),
+		}),
+	]
 
 	State(model, msg, font) : {
 		model : model,
@@ -95,6 +101,50 @@ Program :: [].{
 		scroll : Dict(U64, ScrollState),
 		drag : Drag.DragState,
 		commands : List(Render.Command(font)),
+	}
+
+	## Pair the application's initial model with the font used by layout and
+	## drawing. The platform-specific font is accepted through structural
+	## unification with Font.Handle.
+	start : model, Font.Handle(font) -> Start(model, font)
+	start = |model, font| Start.(Start({ model, font }))
+
+	## Adapt an application's init/update/view functions to RocRay's current
+	## { init!, update, render! } contract without importing the platform.
+	new = |app_init!, update_model, view| {
+		run! = |startup| {
+			started = (app_init!.run!)(startup)?
+			match started {
+				Start(fields) => Ok(Program.init(fields.model, fields.font))
+			}
+		}
+
+		update = |state, ray_step| {
+			step_fields = ray_step.fields()
+			result = Program.step({
+				state,
+				input: step_fields.input,
+				viewport: step_fields.window.size,
+				messages: step_fields.messages,
+				view,
+				update: update_model,
+			})
+
+			match result {
+				Ok(next_state) => ray_step.static(next_state)
+				Err(_) => ray_step.exit(state, 1)
+			}
+		}
+
+		render! = |state, frame| {
+			Render.draw_commands!(frame, state.commands, |color| frame.from_rgba(color))
+		}
+
+		{
+			init!: { config: app_init!.config, run! },
+			update,
+			render!,
+		}
 	}
 
 	## Initialize package state. The first RocRay update builds the first layout.
@@ -117,19 +167,23 @@ Program :: [].{
 		state : State(model, msg, font),
 		input : { keys : List(U8), mouse : RrtMouse.State, ..input_state },
 		viewport : { width : I32, height : I32 },
+		messages : List(msg),
 		view : model -> Element.View(msg, font),
 		update : model, msg -> model,
 	} -> Try(State(model, msg, font), Layout.LayoutError)
 		where [font.Measurable]
-	step = |{ state, input: input_snapshot, viewport, view, update }| {
+	step = |{ state, input: input_snapshot, viewport, messages: task_messages, view, update }| {
 		input = build_input(input_snapshot)
 		screen = { w: viewport.width.to_f32(), h: viewport.height.to_f32() }
 
 		scroll = update_scroll_containers(state.layout, state.scroll, { x: input.mouse.x, y: input.mouse.y }, input.mouse.wheel)?
-		{ messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag)?
+		{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag)?
 
 		var $model = state.model
-		for message in messages {
+		for message in task_messages {
+			$model = update($model, message)
+		}
+		for message in event_messages {
 			$model = update($model, message)
 		}
 

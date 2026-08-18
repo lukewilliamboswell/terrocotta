@@ -7,14 +7,11 @@ app [Model, Msg, program] {
 
 import rr.App
 import rr.Assets
-import rr.Color as RayColor
 import rr.Draw
-import rr.Program as RayProgram
 
 import tc.Element exposing [TextWrap.*, View, box, style, text]
 import tc.Font
 import tc.Program
-import tc.Render
 import tc.Theme
 
 theme = Theme.light
@@ -34,8 +31,8 @@ AppModel : {}
 
 Msg : [NoOp]
 
-update_model : AppModel, Msg -> AppModel
-update_model = |model, _msg| model
+update : AppModel, Msg -> AppModel
+update = |model, _msg| model
 
 label : Str -> View(Msg, Draw.Font)
 label = |content| {
@@ -119,40 +116,15 @@ view = |_model| {
 	)
 }
 
-program = { init!, update, render! }
-
-init! : App.Init(Model, _)
+init! : App.Init(Program.Start(AppModel, Draw.Font), _)
 init! = App.init(
 	App.static_config(App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True)),
 	|_startup| {
 		store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
 		ray_font = Draw.load_store_font!(store, { path: "Inter-Regular.ttf", size: 36 })?
 		font = Font.handle(0, ray_font)
-		Ok(Program.init({}, font))
+		Ok(Program.start({}, font))
 	},
 )
 
-update : Model, RayProgram.Step(Msg) -> RayProgram.Update(Model, Msg)
-update = |model, step| {
-	result = Program.step({
-		state: model,
-		input: step.input,
-		viewport: step.window.size,
-		view,
-		update: update_model,
-	})
-
-	match result {
-		Ok(next_model) => RayProgram.static(next_model)
-		Err(_) => RayProgram.static(model).with_action(RayProgram.exit(1))
-	}
-}
-
-render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
-render! = |model, frame| {
-	Render.draw_commands!(
-		frame,
-		model.commands,
-		|color| RayColor.rgba(color.r, color.g, color.b, color.a),
-	)
-}
+program = Program.new(init!, update, view)
