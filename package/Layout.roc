@@ -3,8 +3,8 @@
 ## Intrinsic sizes are computed during construction.
 import Assets
 import Color
-import Element exposing [default_font]
-import Font
+import Element
+import Font exposing [Measurable]
 import Event
 import Floating exposing [Clip.*, ZOrder.*]
 import Identity exposing [NodeId]
@@ -26,6 +26,7 @@ import Solver
 import Stack
 import Text
 import TextMeasureCache
+import rrt.Font as RrtFont
 
 # --- Public API ---
 Layout(draw) :: {
@@ -33,27 +34,37 @@ Layout(draw) :: {
 	text_contents : List(Str),
 	text_lines : List(Text.Line),
 	text_cache : TextMeasureCache,
+	fonts : Dict(U64, draw),
+	root_text : Text.Config,
 	child_indices : List(U64),
 	pending_children : List(U64),
 	node_ids : Dict(NodeId, U64),
 	root_indices : List(U64),
 	stack : Stack(LayoutFrame),
 }.{
-	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle]
-	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : U64 } => Render.TextSize
+	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle, FontNotFound(U64)]
 	TextSize : Render.TextSize
 	NodeId : U64
 
-	## Create an empty Layout using an explicit text measurement function,
-	## without requiring a platform host ability. Useful for headless layout
-	## computation and deterministic tests.
-	new_with_measure_text : (Render.MeasureTextRaw => Render.TextSize) -> Layout(draw)
-	new_with_measure_text = |measure_text!| {
+	## Create an empty layout with the real font inherited at its root.
+	new : Font.Handle(draw) -> Layout(draw)
+	new = |default_font| {
+		font_key = default_font.key()
 		{
 			nodes: [],
 			text_contents: [],
 			text_lines: [],
-			text_cache: TextMeasureCache.new(measure_text!),
+			text_cache: TextMeasureCache.new(),
+			fonts: Dict.single(font_key, default_font.value()),
+			root_text: {
+				font: font_key,
+				font_size: Element.default_text.font_size,
+				spacing: Element.default_text.spacing,
+				color: Element.default_text.color,
+				line_height: Element.default_text.line_height,
+				align: Element.default_text.align,
+				wrap: Element.default_text.wrap,
+			},
 			child_indices: [],
 			pending_children: [],
 			node_ids: Dict.empty(),
@@ -61,6 +72,10 @@ Layout(draw) :: {
 			stack: Stack.new(),
 		}
 	}
+
+	## Deterministic layout used by package tests.
+	test_layout : () -> Layout(TestFont)
+	test_layout = || Layout.new(Font.handle(0, TestFont.({})))
 
 	## Reset all frame-local layout state before building the next view.
 	clear : Layout(draw) -> Layout(draw)
@@ -92,8 +107,9 @@ Layout(draw) :: {
 	next_node_index = |layout| layout.nodes.len()
 
 	## Push/pop UI messages to build the layout.
-	update! : Layout(draw), Element.ElementOp(msg), (NodeId -> Element.BoxStatus), (NodeId -> LayoutTypes.Pos) => Try((Layout(draw), [Node(NodeId, [Events(List(Event.Handler(msg))), NoEvent]), NoNode]), LayoutError)
-	update! = |layout, op, status_fn, scroll_fn| match op {
+	update : Layout(draw), Element.ElementOp(msg, draw), (NodeId -> Element.BoxStatus), (NodeId -> LayoutTypes.Pos) -> Try((Layout(draw), [Node(NodeId, [Events(List(Event.Handler(msg))), NoEvent]), NoNode]), LayoutError)
+		where [draw.Measurable]
+	update = |layout, op, status_fn, scroll_fn| match op {
 		OpenBox(id, style_fn, events) => {
 			node_id = next_box_node_id(layout, id)?
 			status = status_fn(node_id)
@@ -110,7 +126,7 @@ Layout(draw) :: {
 		}
 		Text(content) => {
 			node_id = next_auto_node_id(layout)?
-			Ok((add_text!(layout, node_id, content)?, Node(node_id, NoEvent)))
+			Ok((add_text(layout, node_id, content)?, Node(node_id, NoEvent)))
 		}
 		Image(cfg) => {
 			node_id = next_auto_node_id(layout)?
@@ -145,7 +161,7 @@ Layout(draw) :: {
 	}
 
 	## Phase 2: Extract render commands from a solved layout.
-	to_commands : Layout(draw), { w : F32, h : F32 } -> Try(List(Render.Command), LayoutError)
+	to_commands : Layout(draw), { w : F32, h : F32 } -> Try(List(Render.Command(draw)), LayoutError)
 	to_commands = |layout, screen| {
 		emit_render_commands(layout, screen)
 	}
@@ -249,7 +265,7 @@ empty_scroll_container_data = {
 
 LayoutFrame : {
 	index : U64,
-	text : Element.TextConfig,
+	text : Text.Config,
 	child_offset : U64,
 }
 
@@ -334,35 +350,56 @@ close_box_node_id = |layout| {
 	}
 }
 
-root_text_config : Element.TextConfig
-root_text_config = { ..Element.default_text, font: resolve_font(Element.default_text.font, default_font) }
-
 ## Deterministic constructor for pure structural layout tests.
-test_layout : () -> Layout(draw)
-test_layout = || {
-	measure_text! = |config| {
-		len = config.text.to_utf8().len().to_f32()
-		gaps = F32.max(0, len - 1)
-		{ width: len * config.size + gaps * config.spacing, height: config.size }
-	}
-	Layout.new_with_measure_text(measure_text!)
+TestFont := {}.{
+	base_size : TestFont -> F32
+	base_size = |_font| 1
+
+	line_spacing : TestFont -> F32
+	line_spacing = |_font| 0
+
+	glyphs : TestFont -> List(RrtFont.GlyphMetrics)
+	glyphs = |_font| [{ codepoint: 0, advance_x: 1, offset_x: 0, offset_y: 0, width: 1, height: 1 }]
+
+	get_glyph_index : TestFont, U32 -> U64
+	get_glyph_index = |_font, _codepoint| 0
 }
 
-resolve_box_text : Layout(draw), Element.TextStyle -> Element.TextConfig
+resolve_box_text : Layout(draw), Element.TextStyle(draw) -> (Layout(draw), Text.Config)
 resolve_box_text = |layout, style| {
-	parent_text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config)
+	parent_text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(layout.root_text)
 	match style {
-		Font(text_cfg) => { ..text_cfg, font: resolve_font(text_cfg.font, parent_text_cfg.font) }
-		Auto => parent_text_cfg
+		Auto => (layout, parent_text_cfg)
+		Font(text_cfg) => {
+			(layout_with_font, font_key) = match text_cfg.font {
+				InheritFont => (layout, parent_text_cfg.font)
+				FontHandle(handle) => (register_font(layout, handle), handle.key())
+			}
+			(
+				layout_with_font,
+				{
+					font: font_key,
+					font_size: text_cfg.font_size,
+					spacing: text_cfg.spacing,
+					color: text_cfg.color,
+					line_height: text_cfg.line_height,
+					align: text_cfg.align,
+					wrap: text_cfg.wrap,
+				},
+			)
+		}
 	}
 }
 
-resolve_font : Font.Font, Font.Font -> Font.Font
-resolve_font = |cfg_font, fallback_font|
-	match cfg_font {
-		DefaultFont => fallback_font
-		CustomFont(_) => cfg_font
+## Retain the first concrete font associated with a stable cache key.
+## Applications must not reuse a key for another font while this layout lives.
+register_font : Layout(draw), Font.Handle(draw) -> Layout(draw)
+register_font = |layout, handle| {
+	match layout.fonts.get(handle.key()) {
+		Ok(_) => layout
+		Err(_) => { ..layout, fonts: layout.fonts.insert(handle.key(), handle.value()) }
 	}
+}
 
 ## Resolve a public floating declaration into the node's internal placement.
 resolve_placement : Layout(draw), ParentIndex, Element.Floating -> Try(LayoutTypes.Placement, [OutOfBounds, ..])
@@ -398,11 +435,11 @@ resolved_floating_config = |config, target, clip_source| {
 
 # --- layout Builder ---
 
-open_box : Layout(draw), Element.ElementId, Element.BoxConfig -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
+open_box : Layout(draw), Element.ElementId, Element.BoxConfig(draw) -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
 open_box = |layout, id, cfg| open_box_with_scroll(layout, id, cfg, { x: 0, y: 0 })
 
 ## Open a box using its retained scroll offset.
-open_box_with_scroll : Layout(draw), Element.ElementId, Element.BoxConfig, LayoutTypes.Pos -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
+open_box_with_scroll : Layout(draw), Element.ElementId, Element.BoxConfig(draw), LayoutTypes.Pos -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
 open_box_with_scroll = |layout, id, cfg, retained_offset| {
 	idx = layout.nodes.len()
 	parent = parent_from_stack(layout)
@@ -411,7 +448,7 @@ open_box_with_scroll = |layout, id, cfg, retained_offset| {
 		parent_node_id(layout, parent)?,
 		parent_child_offset(layout, parent)?,
 	)
-	resolved_text = resolve_box_text(layout, cfg.text)
+	(layout_with_font, resolved_text) = resolve_box_text(layout, cfg.text)
 	resolved_cfg = { ..cfg, text: Auto }
 	placement = resolve_placement(layout, parent, cfg.floating)?
 	layout_parent = match placement {
@@ -439,7 +476,7 @@ open_box_with_scroll = |layout, id, cfg, retained_offset| {
 		sizing_h: resolved_cfg.layout.height,
 		placement,
 	}
-	layout_with_id = register_node_id(layout, node_id, idx)?
+	layout_with_id = register_node_id(layout_with_font, node_id, idx)?
 	Ok({
 		..layout_with_id,
 		nodes: layout_with_id.nodes.append(node),
@@ -534,7 +571,7 @@ close_box = |layout| {
 	attach_closed_box(layout_ranged, node_index, node_with_intrinsic, stack)
 }
 
-build_text_layout : Str, Element.TextConfig, TextMeasureCache.Entry -> TextLayout
+build_text_layout : Str, Text.Config, TextMeasureCache.Entry -> TextLayout
 build_text_layout = |content, config, measured| {
 	line_height = Text.apply_line_height(config, measured.natural_line_height)
 	lines = Text.wrap(content, config, measured.space_width, line_height, measured.preferred_width, measured.words)
@@ -550,7 +587,7 @@ build_text_layout = |content, config, measured| {
 	{ line_height, lines, preferred, min_width }
 }
 
-build_text_node_data : Layout(draw), Element.TextConfig, TextLayout -> TextNodeData
+build_text_node_data : Layout(draw), Text.Config, TextLayout -> TextNodeData
 build_text_node_data = |layout, config, text_layout| {
 	{
 		content_index: layout.text_contents.len(),
@@ -563,12 +600,13 @@ build_text_node_data = |layout, config, text_layout| {
 	}
 }
 
-add_text! : Layout(draw), NodeId, Str => Try(Layout(draw), LayoutError)
-add_text! = |layout, node_id, content| {
-	Draw : draw
+add_text : Layout(draw), NodeId, Str -> Try(Layout(draw), LayoutError)
+	where [draw.Measurable]
+add_text = |layout, node_id, content| {
 	idx = layout.nodes.len()
-	text_config = layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config)
-	(text_cache, text_measure) = layout.text_cache.get_or_create!(content, text_config)
+	text_config = layout.stack.top().map_ok(|frame| frame.text).ok_or(layout.root_text)
+	font = layout.fonts.get(text_config.font).map_err(|_| FontNotFound(text_config.font))?
+	(text_cache, text_measure) = layout.text_cache.get_or_create(content, text_config, font)
 	var $layout = layout
 	$layout = { ..$layout, text_cache }
 	text_layout = build_text_layout(content, text_config, text_measure)
@@ -888,7 +926,7 @@ text_align_offset = |align, box_width, text_width| match align {
 	Right => box_width - text_width
 }
 
-emit_render_commands : Layout(draw), Size -> Try(List(Render.Command), LayoutError)
+emit_render_commands : Layout(draw), Size -> Try(List(Render.Command(draw)), LayoutError)
 emit_render_commands = |layout, screen| {
 	var $commands = []
 	for root in roots_in_z_order(layout, BackToFront)? {
@@ -914,7 +952,7 @@ emit_render_commands = |layout, screen| {
 }
 
 ## Emit one node and its descendants in clipping-safe draw order.
-emit_node_commands : Layout(draw), U64, U64, Size, Size, List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_node_commands : Layout(draw), U64, U64, Size, Size, List(Render.Command(draw)) -> Try(List(Render.Command(draw)), LayoutError)
 emit_node_commands = |layout, index, root_index, root_expand, screen, commands| {
 	node = layout.nodes.get(index)?
 	paint_bounds = if index == root_index {
@@ -969,6 +1007,7 @@ emit_node_commands = |layout, index, root_index, root_expand, screen, commands| 
 			}
 			TextNode(text_data) => {
 				content = layout.text_contents.get(text_data.content_index)?
+				font = layout.fonts.get(text_data.config.font).map_err(|_| FontNotFound(text_data.config.font))?
 				for line_offset in 0..<text_data.lines_count {
 					line = layout.text_lines.get(text_data.lines_start + line_offset)?
 					config = text_data.config
@@ -980,7 +1019,7 @@ emit_node_commands = |layout, index, root_index, root_expand, screen, commands| 
 							font_size: config.font_size,
 							spacing: config.spacing,
 							color: config.color,
-							font: config.font,
+							font,
 						}),
 					)
 				}
@@ -1057,7 +1096,7 @@ node_intersects_ancestor_clips = |nodes, node, parent| match parent {
 
 ## TESTS ##
 
-fixed_cfg : F32, F32 -> Element.BoxConfig
+fixed_cfg : F32, F32 -> Element.BoxConfig(TestFont)
 fixed_cfg = |w, h| {
 	Element.style
 		.width(Fixed(w))
@@ -1065,9 +1104,9 @@ fixed_cfg = |w, h| {
 		.child_align({ x: Start, y: Start })
 }
 
-build_row : Element.BoxConfig, List(Element.BoxConfig) -> Try(Layout(draw), LayoutError)
+build_row : Element.BoxConfig(TestFont), List(Element.BoxConfig(TestFont)) -> Try(Layout(TestFont), LayoutError)
 build_row = |root_cfg, child_cfgs| {
-	var $layout = test_layout()
+	var $layout = Layout.test_layout()
 	$layout = open_box($layout, Auto, root_cfg)?
 	for child_cfg in child_cfgs {
 		$layout = open_box($layout, Auto, child_cfg)?
@@ -1077,21 +1116,21 @@ build_row = |root_cfg, child_cfgs| {
 }
 
 ## Build a root box with flat child boxes and solve it against a screen.
-build_and_solve : Element.BoxConfig, List(Element.BoxConfig), Size -> Try(Layout(draw), LayoutError)
+build_and_solve : Element.BoxConfig(TestFont), List(Element.BoxConfig(TestFont)), Size -> Try(Layout(TestFont), LayoutError)
 build_and_solve = |root_cfg, child_cfgs, screen| {
 	tree = build_row(root_cfg, child_cfgs)?
 	tree.solve(screen)
 }
 
 ## Build a solved vertical scroll container for layout tests.
-build_scroll_column : Element.ElementId, LayoutTypes.Pos, Element.Overflow, F32, List(F32) -> Try(Layout(draw), LayoutError)
+build_scroll_column : Element.ElementId, LayoutTypes.Pos, Element.Overflow, F32, List(F32) -> Try(Layout(TestFont), LayoutError)
 build_scroll_column = |id, offset, overflow_y, viewport_h, child_heights| {
 	root_cfg = fixed_cfg(100, viewport_h)
 		.direction(Col)
 		.pad((3, 7, 5, 11))
 		.gap(4)
 		.overflow(Hidden, overflow_y)
-	var $layout = test_layout()
+	var $layout = Layout.test_layout()
 	$layout = open_box_with_scroll($layout, id, root_cfg, offset)?
 	for child_height in child_heights {
 		$layout = open_box($layout, Auto, fixed_cfg(90, child_height))?
@@ -1180,7 +1219,7 @@ expect {
 	}
 }
 
-test_text_cfg : Element.TextWrap -> Element.BoxConfig
+test_text_cfg : Element.TextWrap -> Element.BoxConfig(TestFont)
 test_text_cfg = |wrap| {
 	Element.style
 		.width(Fixed(4))
@@ -1193,7 +1232,7 @@ test_text_cfg = |wrap| {
 		.text_wrap(wrap)
 }
 
-test_button_cfg : Element.BoxConfig
+test_button_cfg : Element.BoxConfig(TestFont)
 test_button_cfg = {
 	Element.style
 		.width(Fit({ min: 0, max: 10000 }))
@@ -1204,7 +1243,7 @@ test_button_cfg = {
 		.font_size(24)
 }
 
-test_align_text_cfg : Element.TextAlign -> Element.BoxConfig
+test_align_text_cfg : Element.TextAlign -> Element.BoxConfig(TestFont)
 test_align_text_cfg = |align| {
 	Element.style
 		.width(Fixed(10))
@@ -1224,7 +1263,7 @@ test_word = |start, len, width| { start, len, width, is_newline: Bool.False }
 test_newline : U64 -> Text.Word
 test_newline = |start| { start, len: 1, width: 0, is_newline: Bool.True }
 
-seed_test_measurement : Layout(draw), Str, Element.TextConfig, F32, F32, List(Text.Word) -> Layout(draw)
+seed_test_measurement : Layout(TestFont), Str, Text.Config, F32, F32, List(Text.Word) -> Layout(TestFont)
 seed_test_measurement = |layout, content, config, preferred_width, line_height, words| {
 	entry : TextMeasureCache.Entry
 	entry = {
@@ -1240,11 +1279,11 @@ seed_test_measurement = |layout, content, config, preferred_width, line_height, 
 	{ ..layout, text_cache: layout.text_cache.insert(content, config, entry) }
 }
 
-add_test_text : Layout(draw), Str, F32, List(Text.Word) -> Try(Layout(draw), LayoutError)
+add_test_text : Layout(TestFont), Str, F32, List(Text.Word) -> Try(Layout(TestFont), LayoutError)
 add_test_text = |layout, content, preferred_w, words| {
 	idx = layout.nodes.len()
 	node_id = next_auto_node_id(layout)?
-	text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config)
+	text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(layout.root_text)
 	parent = parent_from_stack(layout)
 	content_index = layout.text_contents.len()
 	lines_start = layout.text_lines.len()
@@ -1285,11 +1324,11 @@ add_test_text = |layout, content, preferred_w, words| {
 	)
 }
 
-add_test_text_with_line_height : Layout(draw), Str, F32, F32, List(Text.Word) -> Try(Layout(draw), LayoutError)
+add_test_text_with_line_height : Layout(TestFont), Str, F32, F32, List(Text.Word) -> Try(Layout(TestFont), LayoutError)
 add_test_text_with_line_height = |layout, content, preferred_w, line_h, words| {
 	idx = layout.nodes.len()
 	node_id = next_auto_node_id(layout)?
-	text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config)
+	text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(layout.root_text)
 	parent = parent_from_stack(layout)
 	content_index = layout.text_contents.len()
 	lines_start = layout.text_lines.len()
@@ -1330,27 +1369,27 @@ add_test_text_with_line_height = |layout, content, preferred_w, line_h, words| {
 	)
 }
 
-build_text_test_layout : Element.BoxConfig, Str, F32, List(Text.Word), Size -> Try(Layout(draw), LayoutError)
+build_text_test_layout : Element.BoxConfig(TestFont), Str, F32, List(Text.Word), Size -> Try(Layout(TestFont), LayoutError)
 build_text_test_layout = |root_cfg, content, preferred_w, words, screen| {
-	var $layout = test_layout()
+	var $layout = Layout.test_layout()
 	$layout = open_box($layout, Auto, root_cfg)?
 	$layout = add_test_text($layout, content, preferred_w, words)?
 	$layout = close_box($layout)?
 	$layout.solve(screen)
 }
 
-build_button_text_layout : Str, F32, F32, List(Text.Word), Size -> Try(Layout(draw), LayoutError)
+build_button_text_layout : Str, F32, F32, List(Text.Word), Size -> Try(Layout(TestFont), LayoutError)
 build_button_text_layout = |content, preferred_w, line_h, words, screen| {
-	var $layout = test_layout()
+	var $layout = Layout.test_layout()
 	$layout = open_box($layout, Auto, test_button_cfg)?
 	$layout = add_test_text_with_line_height($layout, content, preferred_w, line_h, words)?
 	$layout = close_box($layout)?
 	$layout.solve(screen)
 }
 
-build_nested_fit_text_layout : Element.BoxConfig, Str, F32, List(Text.Word), Size -> Try(Layout(draw), LayoutError)
+build_nested_fit_text_layout : Element.BoxConfig(TestFont), Str, F32, List(Text.Word), Size -> Try(Layout(TestFont), LayoutError)
 build_nested_fit_text_layout = |root_cfg, content, preferred_w, words, screen| {
-	var $layout = test_layout()
+	var $layout = Layout.test_layout()
 	$layout = open_box($layout, Auto, root_cfg)?
 	$layout = open_box($layout, Auto, Element.style.width(Fit({ min: 0, max: 10000 })).height(Fit({ min: 0, max: 10000 })).direction(Col).child_align({ x: Start, y: Start }))?
 	$layout = add_test_text($layout, content, preferred_w, words)?
@@ -1359,7 +1398,7 @@ build_nested_fit_text_layout = |root_cfg, content, preferred_w, words, screen| {
 	$layout.solve(screen)
 }
 
-text_line_count : Layout(draw), U64 -> U64
+text_line_count : Layout(TestFont), U64 -> U64
 text_line_count = |layout, index| {
 	match layout.nodes.get(index) {
 		Ok(node) => match node.kind {
@@ -1370,7 +1409,7 @@ text_line_count = |layout, index| {
 	}
 }
 
-node_height : Layout(draw), U64 -> F32
+node_height : Layout(TestFont), U64 -> F32
 node_height = |layout, index| {
 	match layout.nodes.get(index) {
 		Ok(node) => node.size.h
@@ -1378,7 +1417,7 @@ node_height = |layout, index| {
 	}
 }
 
-node_pos_y : Layout(draw), U64 -> F32
+node_pos_y : Layout(TestFont), U64 -> F32
 node_pos_y = |layout, index| {
 	match layout.nodes.get(index) {
 		Ok(node) => node.position.y
@@ -1386,7 +1425,7 @@ node_pos_y = |layout, index| {
 	}
 }
 
-first_text_command_y : Layout(draw) -> F32
+first_text_command_y : Layout(TestFont) -> F32
 first_text_command_y = |layout| {
 	match layout.to_commands({ w: 1000, h: 1000 }) {
 		Ok(commands) => {
@@ -1405,7 +1444,7 @@ first_text_command_y = |layout| {
 	}
 }
 
-text_command_positions : Layout(draw) -> List({ x : F32, y : F32, text : Str })
+text_command_positions : Layout(TestFont) -> List({ x : F32, y : F32, text : Str })
 text_command_positions = |layout| {
 	match layout.to_commands({ w: 1000, h: 1000 }) {
 		Ok(commands) => {
@@ -1424,7 +1463,7 @@ text_command_positions = |layout| {
 	}
 }
 
-node_width : Layout(draw), U64 -> F32
+node_width : Layout(TestFont), U64 -> F32
 node_width = |layout, index| {
 	match layout.nodes.get(index) {
 		Ok(node) => node.size.w
@@ -1437,7 +1476,7 @@ node_width = |layout, index| {
 expect {
 	cfg = Element.style
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, cfg)? # root: 0
 		$layout = open_box($layout, Auto, cfg)? # first child: 1
 		$layout = close_box($layout)?
@@ -1476,7 +1515,7 @@ expect {
 	build = || {
 		content = "same text"
 		words = [test_word(0, 9, 9)]
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, test_text_cfg(Words))?
 		$layout = add_test_text($layout, content, 9, words)?
 		$layout = add_test_text($layout, content, 9, words)?
@@ -1492,7 +1531,7 @@ expect {
 ## Clearing frame-local text data retains recent canonical measurements.
 expect {
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, test_text_cfg(Words))?
 		$layout = add_test_text($layout, "cached", 6, [test_word(0, 6, 6)])?
 		$layout = close_box($layout)?
@@ -1509,7 +1548,7 @@ expect {
 ## A text node whose measurement was invalidated cannot be wrapped.
 expect {
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, test_text_cfg(Words))?
 		$layout = add_test_text($layout, "missing", 7, [test_word(0, 7, 7)])?
 		$layout = close_box($layout)?
@@ -1556,7 +1595,7 @@ expect {
 		.child_align({ x: Start, y: Start })
 		.floating(Floating({ target: Parent, config: Element.default_floating_config }))
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("target"), target_cfg)?
 		$layout = open_box($layout, Id("floating"), floating_cfg)?
 		$layout = add_test_text($layout, "aa bb cc", 8, words)?
@@ -1585,7 +1624,7 @@ expect {
 		.background(Color.white)
 		.floating(Floating({ target: Root, config: floating_config }))
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("expanded"), cfg)?
 		$layout = close_box($layout)?
 		$layout = $layout.solve({ w: 100, h: 100 })?
@@ -1614,7 +1653,7 @@ expect {
 		offset: { x: 30, y: 20 },
 	}
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("dependency-root"), fixed_cfg(100, 100))?
 		$layout = open_box(
 			$layout,
@@ -1645,7 +1684,7 @@ expect {
 		.width(Grow({ min: 0, max: 1000 }))
 		.height(Fixed(10))
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("size-order-root"), fixed_cfg(100, 100))?
 		$layout = open_box($layout, Id("size-target"), fixed_cfg(30, 10))?
 		$layout = close_box($layout)?
@@ -1683,7 +1722,7 @@ expect {
 			z_index: 1,
 			capture,
 		}
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("capture-base"), fixed_cfg(100, 100))?
 		$layout = open_box($layout, Id("capture-overlay"), fixed_cfg(100, 100).floating(Floating({ target: Root, config: floating_config })))?
 		$layout = close_box($layout)?
@@ -1814,7 +1853,7 @@ expect {
 expect {
 	cfg = Element.style
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, cfg)?
 		$layout = open_box($layout, Auto, cfg)?
 		$layout = close_box($layout)?
@@ -1836,7 +1875,7 @@ expect {
 
 ## Closing without an open box should be an error.
 expect {
-	match close_box(test_layout()) {
+	match close_box(Layout.test_layout()) {
 		Err(UnmatchedCloseBox) => Bool.True
 		_ => Bool.False
 	}
@@ -1844,7 +1883,7 @@ expect {
 
 ## Solving an empty layout should be a no-op.
 expect {
-	match test_layout().solve({ w: 100, h: 100 }) {
+	match Layout.test_layout().solve({ w: 100, h: 100 }) {
 		Ok(layout) => layout.nodes.len() == 0
 			and layout.text_contents.len() == 0
 				and layout.text_lines.len() == 0
@@ -1858,7 +1897,7 @@ expect {
 expect {
 	cfg = Element.style
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("shared"), cfg)?
 		$layout = close_box($layout)?
 		open_box($layout, Id("shared"), cfg)
@@ -1874,7 +1913,7 @@ expect {
 expect {
 	cfg = Element.style
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Id("root"), cfg)?
 		node = $layout.nodes.get(0)?
 		node_index = index_for_node_id($layout, node.id)?
@@ -1889,7 +1928,7 @@ expect {
 
 ## Hit and hover queries on an empty layout should return empty results.
 expect {
-	layout = test_layout()
+	layout = Layout.test_layout()
 	match (layout.hit_test({ x: 0, y: 0 }), layout.hover_path({ x: 0, y: 0 })) {
 		(Ok(NoHit), Ok([])) => Bool.True
 		_ => Bool.False
@@ -1964,7 +2003,7 @@ expect {
 	texture = Box.box({ handle: 1, width: 20, height: 20 })
 	root_cfg = fixed_cfg(100, 100)
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
 		$layout = add_image($layout, 200, texture)?
 		$layout = close_box($layout)?
@@ -1991,7 +2030,7 @@ expect {
 		.width(Fixed(300))
 		.height(Fixed(300))
 	build = || {
-		var $tree = test_layout()
+		var $tree = Layout.test_layout()
 		$tree = open_box($tree, Auto, root_cfg)?
 		$tree = add_image($tree, 200, texture)?
 		$tree = close_box($tree)?
@@ -2030,7 +2069,7 @@ expect {
 expect {
 	cfg = Element.style
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, cfg)?
 		$layout = open_box($layout, Auto, cfg)?
 		$layout = close_box($layout)?
@@ -2063,7 +2102,7 @@ expect {
 		.height(Fit({ min: 0, max: 1000 }))
 		.child_align({ x: Start, y: Start })
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)? # root: 0
 		$layout = add_image($layout, 100, texture)? # root child: 1
 		$layout = open_box($layout, Auto, nested_cfg)? # root child: 2
@@ -2098,10 +2137,10 @@ expect {
 		text: Font({ ..Element.default_text, font_size: 17, line_height: 21 }),
 	}
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
 		$layout = open_box($layout, Auto, base_cfg)?
-		Ok($layout.stack.top().map_ok(|frame| frame.text).ok_or(root_text_config))
+		Ok($layout.stack.top().map_ok(|frame| frame.text).ok_or($layout.root_text))
 	}
 
 	match build() {
@@ -2118,7 +2157,7 @@ expect {
 		.height(Fit({ min: 0, max: 1000 }))
 	child_cfg = fixed_cfg(10, 20)
 	build = || {
-		var $layout = test_layout()
+		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
 		$layout = open_box($layout, Auto, child_cfg)?
 		$layout = close_box($layout)?
@@ -2234,6 +2273,19 @@ expect {
 			Ok(child) => child.size == { w: 50, h: 50 }
 			Err(_) => Bool.False
 		}
+		Err(_) => Bool.False
+	}
+}
+
+## Default and explicitly selected fonts share the same concrete handle shape.
+expect {
+	selected = Font.handle(1, TestFont.({}))
+	match open_box(Layout.test_layout(), Auto, Element.style.font_family(selected)) {
+		Ok(layout) => layout.fonts.len() == 2
+			and match layout.stack.top() {
+				Ok(frame) => frame.text.font == 1
+				Err(_) => Bool.False
+			}
 		Err(_) => Bool.False
 	}
 }

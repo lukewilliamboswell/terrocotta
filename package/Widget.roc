@@ -18,7 +18,7 @@ Widget := [].{
 		scrim : Color,
 		on_dismiss : [DismissWith(msg), NoDismiss],
 	},
-	View(msg) -> View(msg)
+	View(msg, font) -> View(msg, font)
 	modal = |theme, config, content| {
 		scrim_events = match config.on_dismiss {
 			DismissWith(message) => [OnClick(message)]
@@ -42,7 +42,6 @@ Widget := [].{
 						.width(Fit({ min: 0, max: 600 }))
 						.height(Fit({ min: 0, max: 10000 }))
 						.background(dialog_colors.fill)
-						.font_family(theme.font)
 						.font_size(theme.font_size)
 						.font_color(dialog_colors.content)
 						.radius(theme.radius)
@@ -55,7 +54,7 @@ Widget := [].{
 	}
 
 	## Display body text using the theme background content color.
-	label : Theme, Str -> View
+	label : Theme, Str -> View(msg, font)
 	label = |theme, content| {
 		box(
 			Auto,
@@ -70,7 +69,7 @@ Widget := [].{
 	}
 
 	## Display larger heading text using the theme primary color.
-	heading : Theme, Str -> View
+	heading : Theme, Str -> View(msg, font)
 	heading = |theme, content| {
 		box(
 			Auto,
@@ -85,7 +84,7 @@ Widget := [].{
 	}
 
 	## Lay out children horizontally with the theme gap.
-	row : Theme, List(View) -> View
+	row : Theme, List(View(msg, font)) -> View(msg, font)
 	row = |theme, children| {
 		box(
 			Auto,
@@ -101,7 +100,7 @@ Widget := [].{
 	}
 
 	## Lay out children vertically with the theme gap.
-	column : Theme, List(View) -> View
+	column : Theme, List(View(msg, font)) -> View(msg, font)
 	column = |theme, children| {
 		box(
 			Auto,
@@ -117,7 +116,7 @@ Widget := [].{
 	}
 
 	## Group children on a weak background surface.
-	panel : Theme, List(View) -> View
+	panel : Theme, List(View(msg, font)) -> View(msg, font)
 	panel = |theme, children| {
 		colors = theme.palette.background.weak
 
@@ -127,7 +126,6 @@ Widget := [].{
 				.width(Fit({ min: 0, max: 10000 }))
 				.height(Fit({ min: 0, max: 10000 }))
 				.background(colors.fill)
-				.font_family(theme.font)
 				.font_size(theme.font_size)
 				.font_color(colors.content)
 				.radius(theme.radius)
@@ -141,7 +139,7 @@ Widget := [].{
 	}
 
 	## Display a button-shaped command label with hover, press, and focus styling.
-	button : Theme, Variant, Str, List(Event.Handler) -> View
+	button : Theme, Variant, Str, List(Event.Handler(msg)) -> View(msg, font)
 	button = |theme, variant, content, events| {
 		colors = role_pair(theme, variant)
 
@@ -152,7 +150,6 @@ Widget := [].{
 					.width(Fit({ min: 0, max: 10000 }))
 					.height(Fit({ min: 0, max: 10000 }))
 					.background(colors.fill)
-					.font_family(theme.font)
 					.font_size(theme.font_size)
 					.font_color(colors.content)
 					.radius(theme.radius)
@@ -181,7 +178,7 @@ Widget := [].{
 	}
 
 	## Display a model-owned checkbox with a text label.
-	checkbox : Theme, Bool, Str, (Bool -> msg) -> View(msg)
+	checkbox : Theme, Bool, Str, (Bool -> msg) -> View(msg, font)
 	checkbox = |theme, checked, content, on_change| {
 		box_size = theme.font_size
 		next_checked = if checked {
@@ -201,7 +198,6 @@ Widget := [].{
 				var $box_style = style
 					.width(Fit({ min: 0, max: 10000 }))
 					.height(Fit({ min: 0, max: 10000 }))
-					.font_family(theme.font)
 					.font_size(theme.font_size)
 					.font_color(theme.palette.background.base.content)
 					.direction(Row)
@@ -245,7 +241,7 @@ Widget := [].{
 	}
 
 	## Display a model-owned toggle switch.
-	toggle : Theme, Bool, (Bool -> msg) -> View(msg)
+	toggle : Theme, Bool, (Bool -> msg) -> View(msg, font)
 	toggle = |theme, checked, on_change| {
 		track_size = theme.font_size
 		knob_size = theme.font_size
@@ -327,7 +323,7 @@ Widget := [].{
 	}
 
 	## Display a compact semantic label.
-	badge : Theme, Variant, Str -> View
+	badge : Theme, Variant, Str -> View(msg, font)
 	badge = |theme, variant, content| {
 		colors = role_pair(theme, variant)
 
@@ -337,7 +333,6 @@ Widget := [].{
 				.width(Fit({ min: 0, max: 10000 }))
 				.height(Fit({ min: 0, max: 10000 }))
 				.background(colors.fill)
-				.font_family(theme.font)
 				.font_size(theme.font_size * 0.85)
 				.font_color(colors.content)
 				.radius(theme.radius)
@@ -454,7 +449,7 @@ Widget := [].{
 		options : List(Str),
 		on_toggle_open : Bool -> msg,
 		on_select : U64 -> msg,
-	} -> View(msg)
+	} -> View(msg, font)
 	select = |theme, config| {
 		on_toggle_open = config.on_toggle_open
 		on_select = config.on_select
@@ -485,7 +480,6 @@ Widget := [].{
 					.width(Grow({ min: theme.font_size * 6, max: 10000 }))
 					.height(Fit({ min: 0, max: 10000 }))
 					.background(trigger_colors.fill)
-					.font_family(theme.font)
 					.font_size(theme.font_size)
 					.font_color(theme.palette.background.base.content)
 					.radius(theme.radius)
@@ -749,16 +743,15 @@ role_pair = |theme, variant| {
 }
 
 ## Base text style shared by themed text widgets.
-text_style : Theme, F32, Pair -> Element.BoxConfig
-text_style = |theme, size, colors| {
+text_style : Theme, F32, Pair -> Element.BoxConfig(font)
+text_style = |_theme, size, colors| {
 	style
-		.font_family(theme.font)
 		.font_size(size)
 		.font_color(colors.content)
 }
 
 ## Build the floating dropdown panel for a select, attached to its trigger.
-select_panel : Theme, List(View(msg)) -> View(msg)
+select_panel : Theme, List(View(msg, font)) -> View(msg, font)
 select_panel = |theme, select_options| {
 	box(
 		Auto,
@@ -766,7 +759,6 @@ select_panel = |theme, select_options| {
 			.width(Grow({ min: 0, max: 10000 }))
 			.height(Fit({ min: 0, max: 10000 }))
 			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
 			.font_size(theme.font_size)
 			.font_color(theme.palette.background.base.content)
 			.radius(theme.radius)
@@ -793,7 +785,7 @@ select_panel = |theme, select_options| {
 }
 
 ## Build the full-screen click-catcher that dismisses an open select.
-select_scrim : (Bool -> msg) -> View(msg)
+select_scrim : (Bool -> msg) -> View(msg, font)
 select_scrim = |on_toggle_open| {
 	box(
 		Auto,
@@ -816,7 +808,7 @@ select_scrim = |on_toggle_open| {
 }
 
 ## Render one selectable row for a select dropdown.
-select_option : Theme, Str, U64, Bool, (U64 -> msg), (Bool -> msg) -> View(msg)
+select_option : Theme, Str, U64, Bool, (U64 -> msg), (Bool -> msg) -> View(msg, font)
 select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 	selected_colors = if is_selected {
 		theme.palette.primary.base
@@ -835,7 +827,6 @@ select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 			var $box_style = style
 				.width(Grow({ min: 0, max: 10000 }))
 				.height(Fit({ min: 0, max: 10000 }))
-				.font_family(theme.font)
 				.font_size(theme.font_size)
 				.font_color(content_color)
 				.radius(theme.radius)

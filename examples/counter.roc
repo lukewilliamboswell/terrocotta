@@ -1,14 +1,17 @@
 ## Minimal counter with increment and decrement buttons.
-app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-14-549b94e",
 }
 
 import rr.App
+import rr.Color as RayColor
 import rr.Draw
-import rr.Host
+import rr.Program as RayProgram
 
 import tc.Element exposing [box, text, View, style]
+import tc.Font
 import tc.Program
 import tc.Render
 import tc.Theme
@@ -16,7 +19,7 @@ import tc.Widget exposing [button]
 
 theme = Theme.dark
 
-Model : Program.State(AppModel, Msg)
+Model : Program.State(AppModel, Msg, Draw.Font)
 
 AppModel : {
 	count : I32,
@@ -27,23 +30,19 @@ Msg : [
 	Increment,
 ]
 
-init! : Host => Try(AppModel, [])
-init! = |_host| Ok({ count: 0 })
-
-update : AppModel, Msg -> AppModel
-update = |model, msg| match msg {
+update_model : AppModel, Msg -> AppModel
+update_model = |model, msg| match msg {
 	Decrement => { ..model, count: model.count - 1 }
 	Increment => { ..model, count: model.count + 1 }
 }
 
-view : AppModel -> View(Msg)
+view : AppModel -> View(Msg, Draw.Font)
 view = |model| {
 	box(
 		Auto,
 		|_| style
 			.direction(Col)
 			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
 			.font_size(theme.font_size)
 			.font_color(theme.palette.background.base.content),
 		[],
@@ -65,27 +64,38 @@ view = |model| {
 	)
 }
 
-## Measure layout text with the built-in font. The handle in `config.font` is
-## package-local; this example only uses the default font, so every handle maps
-## to the same platform font.
-measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| {
-	Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: Draw.default_font,
+program = { init!, update, render! }
+
+init! : App.Init(Model, [])
+init! = App.init(
+	App.static_config(App.default.with_title("Counter Example").with_size({ width: 640, height: 420 })),
+	|_startup| {
+		font = Font.handle(0, Draw.default_font!())
+		Ok(Program.init({ count: 0 }, font))
+	},
+)
+
+update : Model, RayProgram.Step(Msg) -> RayProgram.Update(Model, Msg)
+update = |model, step| {
+	result = Program.step({
+		state: model,
+		input: step.input,
+		viewport: step.window.size,
+		view,
+		update: update_model,
 	})
+
+	match result {
+		Ok(next_model) => RayProgram.static(next_model)
+		Err(_) => RayProgram.static(model).with_action(RayProgram.exit(1))
+	}
 }
 
-program : {
-	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
+render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
+render! = |model, frame| {
+	Render.draw_commands!(
+		frame,
+		model.commands,
+		|color| RayColor.rgba(color.r, color.g, color.b, color.a),
+	)
 }
-program = Program.new!({
-	config: App.default.with_title("Counter Example").with_size({ width: 640, height: 420 }),
-	init!,
-	view,
-	update,
-	measure_text!,
-})

@@ -1,14 +1,12 @@
-## Model-View-Update architecture runtime.
-## Wires init, view, and update into the platform's { init!, render! } contract.
-##
-## Usage:
-##   program = Program.new!({ config, init!, view, update: update! })
+## Platform-independent Model-View-Update state and stepping.
 import Layout
 import LayoutTypes
 import Render
 import Element
 import Event
 import Drag
+import Font exposing [Measurable]
+import rrt.Mouse as RrtMouse
 
 HostState : {
 	keys : List(U8),
@@ -60,26 +58,23 @@ default_scroll_state = {
 	momentum_time: 0,
 }
 
-## Build the frame-local input snapshot from a platform host.
-##
-## The host packs held/pressed/released bits per key and button into one byte;
-## expand them into per-index 0/1 lists so the package stays keyed by code.
-build_input : { keys : List(U8), mouse : { buttons : List(U8), left : Bool, middle : Bool, right : Bool, wheel_y : F32, x : F32, y : F32, ..mouse_state }, ..host_state } -> HostState
-build_input = |host| {
+## Adapt RocRay's package-owned input values to Terrocotta's event snapshot.
+build_input : { keys : List(U8), mouse : RrtMouse.State, ..input_state } -> HostState
+build_input = |input| {
 	{
-		keys: derive(host.keys, 1),
-		keys_pressed: derive(host.keys, 2),
-		keys_released: derive(host.keys, 4),
+		keys: derive(input.keys, 1),
+		keys_pressed: derive(input.keys, 2),
+		keys_released: derive(input.keys, 4),
 		mouse: {
-			buttons: derive(host.mouse.buttons, 1),
-			buttons_pressed: derive(host.mouse.buttons, 2),
-			buttons_released: derive(host.mouse.buttons, 4),
-			left: host.mouse.left,
-			middle: host.mouse.middle,
-			right: host.mouse.right,
-			wheel: host.mouse.wheel_y,
-			x: host.mouse.x,
-			y: host.mouse.y,
+			buttons: derive(input.mouse.buttons, 1),
+			buttons_pressed: derive(input.mouse.buttons, 2),
+			buttons_released: derive(input.mouse.buttons, 4),
+			left: input.mouse.left,
+			middle: input.mouse.middle,
+			right: input.mouse.right,
+			wheel: input.mouse.wheel_y,
+			x: input.mouse.x,
+			y: input.mouse.y,
 		},
 	}
 }
@@ -91,114 +86,70 @@ derive = |states, mask|
 
 Program :: [].{
 
-	State(model, msg) : {
+	State(model, msg, font) : {
 		model : model,
-		layout : Layout,
+		layout : Layout(font),
+		event_bindings : EventBindings(msg),
 		hovered : List(U64),
 		focused : U64,
 		scroll : Dict(U64, ScrollState),
 		drag : Drag.DragState,
+		commands : List(Render.Command(font)),
 	}
 
-	new! : {
-		config : cfg,
-		init! : host => Try(m, init_errors),
-		view : m -> Element.View(msg),
-		update : m, msg -> m,
-		measure_text! : Render.MeasureTextRaw => Render.TextSize,
-	} -> {
-		init! : {
-			config : cfg,
-			run! : host => Try(State(m, msg), [Exit(I64), ..]),
-		},
-		render! : State(m, msg), { screen : { width : I32, height : I32 }, keys : List(U8), mouse : { buttons : List(U8), left : Bool, middle : Bool, right : Bool, wheel_y : F32, x : F32, y : F32, ..mouse_state }, ..host_state }, frame => Try(State(m, msg), [Exit(I64), ..]),
-	}
-		where [
-			frame.rectangle! : frame,
-			{
-				x : F32,
-				y : F32,
-				width : F32,
-				height : F32,
-				style : {
-					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
-					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
-				},
-			} => {},
-			frame.rounded_rectangle! : frame,
-			{
-				x : F32,
-				y : F32,
-				width : F32,
-				height : F32,
-				radius : F32,
-				segments : I32,
-				style : {
-					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
-					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
-				},
-			} => {},
-			frame.text_at! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, color : { r : U8, g : U8, b : U8, a : U8 } } => {},
-			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..scissor_errors])) => Try({}, [ScopeLimit, ..scissor_errors]),
-		]
-	new! = |{ config, init!, view, update, measure_text! }| {
-		run! = |host|
-			Ok({
-				model: init!(host).map_err(|_errs| Exit(1))?,
-				layout: Layout.new_with_measure_text(measure_text!),
-				hovered: [],
-				focused: 0,
-				scroll: Dict.empty(),
-				drag: Idle,
-			})
-
-		render! = |state, host, frame| {
-			input = build_input(host)
-			screen = { w: host.screen.width.to_f32(), h: host.screen.height.to_f32() }
-
-			scroll = update_scroll_containers(state.layout, state.scroll, { x: input.mouse.x, y: input.mouse.y }, input.mouse.wheel).map_err(|_e| Exit(1))?
-
-			var $layout = state.layout.clear()
-			var $event_bindings = Dict.empty()
-
-			for element_op in view(state.model) {
-				# update layout
-				($layout, node) = $layout.update!(
-					element_op,
-					|node_id| get_box_status(node_id, state.hovered, state.focused, input),
-					|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
-				).map_err(|_e| Exit(1))?
-
-				## bind events
-				$event_bindings = match node {
-					Node(node_id, Events(events)) => {
-						$event_bindings.insert(node_id, events)
-					}
-					_ => $event_bindings
-				}
-			}
-
-			# solve layout
-			$layout = $layout.solve(screen).map_err(|_e| Exit(1))?
-
-			# event handling
-			var $model = state.model
-			{ messages, hovered, focused, drag } = handle_events($layout, $event_bindings, input, state.hovered, state.focused, state.drag).map_err(|_e| Exit(1))?
-			for message in messages {
-				$model = update($model, message)
-			}
-
-			# render layout
-			commands = $layout.to_commands(screen).map_err(|_e| Exit(1))?
-			Render.draw_commands!(frame, commands)?
-
-			Ok({ model: $model, layout: $layout, hovered, focused, scroll, drag })
-		}
-
+	## Initialize package state. The first RocRay update builds the first layout.
+	init : model, Font.Handle(font) -> State(model, msg, font)
+	init = |model, font| {
 		{
-			init!: { config, run! },
-			render!,
+			model,
+			layout: Layout.new(font),
+			event_bindings: Dict.empty(),
+			hovered: [],
+			focused: 0,
+			scroll: Dict.empty(),
+			drag: Idle,
+			commands: [],
 		}
+	}
+
+	## Advance interaction and solve the layout that render will draw.
+	step : {
+		state : State(model, msg, font),
+		input : { keys : List(U8), mouse : RrtMouse.State, ..input_state },
+		viewport : { width : I32, height : I32 },
+		view : model -> Element.View(msg, font),
+		update : model, msg -> model,
+	} -> Try(State(model, msg, font), Layout.LayoutError)
+		where [font.Measurable]
+	step = |{ state, input: input_snapshot, viewport, view, update }| {
+		input = build_input(input_snapshot)
+		screen = { w: viewport.width.to_f32(), h: viewport.height.to_f32() }
+
+		scroll = update_scroll_containers(state.layout, state.scroll, { x: input.mouse.x, y: input.mouse.y }, input.mouse.wheel)?
+		{ messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag)?
+
+		var $model = state.model
+		for message in messages {
+			$model = update($model, message)
+		}
+
+		var $layout = state.layout.clear()
+		var $event_bindings = Dict.empty()
+		for element_op in view($model) {
+			($layout, node) = $layout.update(
+				element_op,
+				|node_id| get_box_status(node_id, hovered, focused, input),
+				|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
+			)?
+			$event_bindings = match node {
+				Node(node_id, Events(events)) => $event_bindings.insert(node_id, events)
+				_ => $event_bindings
+			}
+		}
+
+		$layout = $layout.solve(screen)?
+		commands = $layout.to_commands(screen)?
+		Ok({ model: $model, layout: $layout, event_bindings: $event_bindings, hovered, focused, scroll, drag, commands })
 	}
 }
 

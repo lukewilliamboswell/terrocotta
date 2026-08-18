@@ -221,7 +221,6 @@ Drag := [].{
 
 ## Fixed 100x60 root with 90-wide children from the test cases, and the hover
 ## path for a press at 97, 30 (inside the root, outside the children).
-drag_test_scene : () -> Try({ layout : Layout(draw), hovered : List(U64) }, Layout.LayoutError)
 drag_test_scene = || {
 	view = Element.box(
 		Auto,
@@ -236,13 +235,12 @@ drag_test_scene = || {
 			),
 		],
 	)
-	measure_text! = |_config| { width: 0, height: 0 }
-	layout = Layout.new_with_measure_text(measure_text!)
+	layout = Layout.test_layout()
 	status = |_node_id| { focused: False, hovered: False, pressed: False, disabled: False }
 	scroll = |_node_id| { x: 0, y: 0 }
 	var $layout = layout
 	for op in view {
-		(next, _) = $layout.update!(op, status, scroll)?
+		(next, _) = $layout.update(op, status, scroll)?
 		$layout = next
 	}
 	$layout = $layout.solve({ w: 200, h: 200 })?

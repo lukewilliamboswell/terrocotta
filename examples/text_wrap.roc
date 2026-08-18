@@ -1,23 +1,23 @@
-## Text wrapping showcase with lorem ipsum paragraphs.
-app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
+## Text wrapping showcase using a font loaded once from a RocRay asset store.
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-14-549b94e",
 }
 
 import rr.App
+import rr.Assets
+import rr.Color as RayColor
 import rr.Draw
-import rr.Host
-import tc.Color
-import tc.Element exposing [TextWrap.*, View, box, default_font, style, text]
+import rr.Program as RayProgram
+
+import tc.Element exposing [TextWrap.*, View, box, style, text]
 import tc.Font
 import tc.Program
 import tc.Render
 import tc.Theme
 
 theme = Theme.light
-
-font_path : Str
-font_path = "examples/assets/Inter-Regular.ttf"
 
 lorem : Str
 lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer non sem vitae lacus gravida facilisis. Donec porttitor, justo sed luctus feugiat, nibh lorem malesuada enim, sed pulvinar erat lectus id massa."
@@ -28,35 +28,16 @@ newline_lorem = "Lorem ipsum dolor sit amet.\nInteger non sem vitae lacus.\nDone
 none_lorem : Str
 none_lorem = "Short raw line."
 
-Model : Program.State(AppModel, Msg)
+Model : Program.State(AppModel, Msg, Draw.Font)
 
-AppModel : {
-	font : Font.Font,
-}
+AppModel : {}
 
 Msg : [NoOp]
 
-init! : Host => Try(AppModel, [Exit(U64), ..])
-init! = |_host| {
-	ray_font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
-	font = Font.custom_font({
-		key: 1,
-		measure!: |config| Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: ray_font }),
-		draw!: |_config| {},
-	})
-	Ok({ font: font })
-}
+update_model : AppModel, Msg -> AppModel
+update_model = |model, _msg| model
 
-measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| match config.font {
-	DefaultFont => Draw.measure_text!({ text: config.text, size: config.size, spacing: config.spacing, font: Draw.default_font })
-	CustomFont(resource) => Font.measure_font!(resource, { text: config.text, size: config.size, spacing: config.spacing })
-}
-
-update : AppModel, Msg -> AppModel
-update = |model, _msg| model
-
-label : Str -> View(Msg)
+label : Str -> View(Msg, Draw.Font)
 label = |content| {
 	box(
 		Auto,
@@ -71,7 +52,7 @@ label = |content| {
 	)
 }
 
-paragraph : Element.TextWrap, Str -> View(Msg)
+paragraph : TextWrap, Str -> View(Msg, Draw.Font)
 paragraph = |wrap_mode, content| {
 	box(
 		Auto,
@@ -86,7 +67,7 @@ paragraph = |wrap_mode, content| {
 	)
 }
 
-panel : Str, Element.TextWrap, Str -> View(Msg)
+panel : Str, TextWrap, Str -> View(Msg, Draw.Font)
 panel = |title, wrap_mode, content| {
 	box(
 		Auto,
@@ -106,8 +87,8 @@ panel = |title, wrap_mode, content| {
 	)
 }
 
-view : AppModel -> View(Msg)
-view = |model| {
+view : AppModel -> View(Msg, Draw.Font)
+view = |_model| {
 	box(
 		Auto,
 		|_| style
@@ -115,7 +96,6 @@ view = |model| {
 			.gap(theme.gap)
 			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
 			.background(theme.palette.background.base.fill)
-			.font_family(model.font)
 			.font_color(theme.palette.background.base.content)
 			.font_size(theme.font_size),
 		[],
@@ -139,14 +119,40 @@ view = |model| {
 	)
 }
 
-program : {
-	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
+program = { init!, update, render! }
+
+init! : App.Init(Model, _)
+init! = App.init(
+	App.static_config(App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True)),
+	|_startup| {
+		store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
+		ray_font = Draw.load_store_font!(store, { path: "Inter-Regular.ttf", size: 36 })?
+		font = Font.handle(0, ray_font)
+		Ok(Program.init({}, font))
+	},
+)
+
+update : Model, RayProgram.Step(Msg) -> RayProgram.Update(Model, Msg)
+update = |model, step| {
+	result = Program.step({
+		state: model,
+		input: step.input,
+		viewport: step.window.size,
+		view,
+		update: update_model,
+	})
+
+	match result {
+		Ok(next_model) => RayProgram.static(next_model)
+		Err(_) => RayProgram.static(model).with_action(RayProgram.exit(1))
+	}
 }
-program = Program.new!({
-	config: App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True),
-	init!,
-	view,
-	update,
-	measure_text!,
-})
+
+render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
+render! = |model, frame| {
+	Render.draw_commands!(
+		frame,
+		model.commands,
+		|color| RayColor.rgba(color.r, color.g, color.b, color.a),
+	)
+}

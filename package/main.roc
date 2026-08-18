@@ -13,4 +13,6 @@ package
 		Render,
 		TextMeasureCache,
 	]
-	{}
+	{
+		rrt: "../../roc-ray/types/main.roc",
+	}

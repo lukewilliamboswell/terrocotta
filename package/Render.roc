@@ -2,7 +2,6 @@
 import Assets
 import Color
 import Element
-import Font
 
 RenderVector2 : { x : F32, y : F32 }
 
@@ -55,11 +54,11 @@ RenderDrawTextureRaw : {
 	tint : Color,
 }
 
-RenderCommandRaw := [
+RenderCommandRaw(font) := [
 	Rectangle({ x : F32, y : F32, width : F32, height : F32, color : Color }),
 	RoundedRectangle({ x : F32, y : F32, width : F32, height : F32, radius : F32, color : Color }),
 	Border(RenderBorderRaw),
-	Text(RenderTextRawConfig),
+	Text(RenderTextRawConfig(font)),
 	Image(RenderImageRaw),
 	ScissorStart({ x : F32, y : F32, width : F32, height : F32 }),
 	ScissorEnd,
@@ -78,14 +77,14 @@ RenderBorderRaw := {
 	bottom : F32,
 }
 
-RenderTextRawConfig := {
+RenderTextRawConfig(font) := {
 	x : F32,
 	y : F32,
 	text : Str,
 	font_size : F32,
 	spacing : F32,
 	color : Color,
-	font : Font.Font,
+	font : font,
 }
 
 RenderImageRaw := {
@@ -96,19 +95,12 @@ RenderImageRaw := {
 	texture : Assets.Texture,
 }
 
-RenderMeasureTextRaw : {
-	text : Str,
-	size : F32,
-	spacing : F32,
-	font : Font.Font,
-}
-
 RenderTextSize : { width : F32, height : F32 }
 
 Render := [].{
-	Command : RenderCommandRaw
+	Command(font) : RenderCommandRaw(font)
 	BorderConfig : RenderBorderRaw
-	TextConfig : RenderTextRawConfig
+	TextConfig(font) : RenderTextRawConfig(font)
 	Vector2 : RenderVector2
 	Rect : RenderRect
 	TextRaw : RenderTextRaw
@@ -116,10 +108,9 @@ Render := [].{
 	RoundedRectangleRaw : RenderRoundedRectangleRaw
 	RoundedRectangleLinesRaw : RenderRoundedRectangleLinesRaw
 	DrawTextureRaw : RenderDrawTextureRaw
-	MeasureTextRaw : RenderMeasureTextRaw
 	TextSize : RenderTextSize
 
-	draw_commands! : frame, List(Render.Command) => Try({}, [Exit(I64), ..])
+	draw_commands! : frame, List(Render.Command(font)), (Color -> frame_color) => Try({}, [Exit(I64), ..])
 		where [
 			frame.rectangle! : frame,
 			{
@@ -128,8 +119,8 @@ Render := [].{
 				width : F32,
 				height : F32,
 				style : {
-					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
-					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+					fill : [NoFill, Fill(frame_color)],
+					stroke : [NoStroke, Stroke({ color : frame_color, thickness : F32 })],
 				},
 			} => {},
 			frame.rounded_rectangle! : frame,
@@ -141,22 +132,22 @@ Render := [].{
 				radius : F32,
 				segments : I32,
 				style : {
-					fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
-					stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+					fill : [NoFill, Fill(frame_color)],
+					stroke : [NoStroke, Stroke({ color : frame_color, thickness : F32 })],
 				},
 			} => {},
-			frame.text_at! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, color : { r : U8, g : U8, b : U8, a : U8 } } => {},
+			frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : frame_color, font : font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
 			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 		]
-	draw_commands! = |frame, commands| {
-		draw_region!(frame, commands, NoScissor)?
+	draw_commands! = |frame, commands, to_frame_color| {
+		draw_region!(frame, commands, NoScissor, to_frame_color)?
 
 		Ok({})
 	}
 }
 
 ## Draw one contiguous command region, honoring the enclosing scissor bounds.
-draw_region! : frame, List(Render.Command), [NoScissor, Scissor(RenderRect)] => Try({}, [Exit(I64), ..])
+draw_region! : frame, List(Render.Command(font)), [NoScissor, Scissor(RenderRect)], (Color -> frame_color) => Try({}, [Exit(I64), ..])
 	where [
 		frame.rectangle! : frame,
 		{
@@ -165,8 +156,8 @@ draw_region! : frame, List(Render.Command), [NoScissor, Scissor(RenderRect)] => 
 			width : F32,
 			height : F32,
 			style : {
-				fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
-				stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+				fill : [NoFill, Fill(frame_color)],
+				stroke : [NoStroke, Stroke({ color : frame_color, thickness : F32 })],
 			},
 		} => {},
 		frame.rounded_rectangle! : frame,
@@ -178,14 +169,14 @@ draw_region! : frame, List(Render.Command), [NoScissor, Scissor(RenderRect)] => 
 			radius : F32,
 			segments : I32,
 			style : {
-				fill : [NoFill, Fill({ r : U8, g : U8, b : U8, a : U8 })],
-				stroke : [NoStroke, Stroke({ color : { r : U8, g : U8, b : U8, a : U8 }, thickness : F32 })],
+				fill : [NoFill, Fill(frame_color)],
+				stroke : [NoStroke, Stroke({ color : frame_color, thickness : F32 })],
 			},
 		} => {},
-		frame.text_at! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, color : { r : U8, g : U8, b : U8, a : U8 } } => {},
+		frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : frame_color, font : font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
 		frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 	]
-draw_region! = |frame, commands, scissor| {
+draw_region! = |frame, commands, scissor, to_frame_color| {
 	match commands {
 		[] => Ok({})
 		[head, .. as rest] =>
@@ -198,7 +189,7 @@ draw_region! = |frame, commands, scissor| {
 						height: r.height,
 						style: { fill: Fill(to_frame_color(r.color)), stroke: NoStroke },
 					})
-					draw_region!(frame, rest, scissor)
+					draw_region!(frame, rest, scissor, to_frame_color)
 				}
 				RoundedRectangle(r) => {
 					frame.rounded_rectangle!({
@@ -210,7 +201,7 @@ draw_region! = |frame, commands, scissor| {
 						segments: 12,
 						style: { fill: Fill(to_frame_color(r.color)), stroke: NoStroke },
 					})
-					draw_region!(frame, rest, scissor)
+					draw_region!(frame, rest, scissor, to_frame_color)
 				}
 				Border(b) => {
 					uniform = b.left == b.right and b.left == b.top and b.left == b.bottom
@@ -265,18 +256,21 @@ draw_region! = |frame, commands, scissor| {
 							})
 						}
 					}
-					draw_region!(frame, rest, scissor)
+					draw_region!(frame, rest, scissor, to_frame_color)
 				}
 				Text(t) => {
-					frame.text_at!({
+					frame.text!({
 						pos: { x: t.x, y: t.y },
 						text: t.text,
 						size: t.font_size,
+						spacing: t.spacing,
 						color: to_frame_color(t.color),
+						font: t.font,
+						align: { horizontal: Left, vertical: Top },
 					})
-					draw_region!(frame, rest, scissor)
+					draw_region!(frame, rest, scissor, to_frame_color)
 				}
-				Image(_) => draw_region!(frame, rest, scissor)
+				Image(_) => draw_region!(frame, rest, scissor, to_frame_color)
 				ScissorStart(bounds) => {
 					next = match scissor {
 						NoScissor => bounds
@@ -286,11 +280,11 @@ draw_region! = |frame, commands, scissor| {
 					match frame.with_scissor!(
 						next,
 						|scissor_frame| {
-							draw_region!(scissor_frame, inner, Scissor(next)).map_err(|_| ScopeLimit)?
+							draw_region!(scissor_frame, inner, Scissor(next), to_frame_color).map_err(|_| ScopeLimit)?
 							Ok({})
 						},
 					) {
-						Ok(_) => draw_region!(frame, after, scissor)
+						Ok(_) => draw_region!(frame, after, scissor, to_frame_color)
 						Err(_) => Err(Exit(1))
 					}
 				}
@@ -301,10 +295,10 @@ draw_region! = |frame, commands, scissor| {
 
 ## Split commands following a ScissorStart into the nested region up to the
 ## matching ScissorEnd and the commands after it.
-split_scissor : List(Render.Command) -> { inner : List(Render.Command), after : List(Render.Command) }
+split_scissor : List(Render.Command(font)) -> { inner : List(Render.Command(font)), after : List(Render.Command(font)) }
 split_scissor = |commands| split_scissor_at(commands, 0, [])
 
-split_scissor_at : List(Render.Command), U64, List(Render.Command) -> { inner : List(Render.Command), after : List(Render.Command) }
+split_scissor_at : List(Render.Command(font)), U64, List(Render.Command(font)) -> { inner : List(Render.Command(font)), after : List(Render.Command(font)) }
 split_scissor_at = |commands, depth, acc| {
 	match commands {
 		[] => { inner: acc, after: [] }
@@ -328,8 +322,3 @@ intersection = |a, b| {
 	bottom = F32.min(a.y + a.height, b.y + b.height)
 	{ x, y, width: F32.max(0, right - x), height: F32.max(0, bottom - y) }
 }
-
-## Project a package color to the structural RGBA record used by the frame
-## where clauses.
-to_frame_color : Color -> { r : U8, g : U8, b : U8, a : U8 }
-to_frame_color = |color| { r: color.r, g: color.g, b: color.b, a: color.a }

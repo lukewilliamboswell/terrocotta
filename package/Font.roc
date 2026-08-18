@@ -1,38 +1,30 @@
-## Platform-independent font resources and operations.
-import Color
+## A stable cache identity paired with an opaque, structurally measurable font.
+import rrt.Font as RrtFont
 
 Font := [].{
+	font.Measurable :
+		where [
+			font.base_size : font -> F32,
+			font.line_spacing : font -> F32,
+			font.glyphs : font -> List(RrtFont.GlyphMetrics),
+			font.get_glyph_index : font, U32 -> U64,
+		]
 
-	FontMeasure : { text : Str, size : F32, spacing : F32 }
-
-	FontDraw : {
-		pos : { x : F32, y : F32 },
-		text : Str,
-		size : F32,
-		spacing : F32,
-		color : Color,
-	}
-
-	FontResource :: {
+	Handle(font) :: {
 		key : U64,
-		measure : Box(FontMeasure => { width : F32, height : F32 }),
-		draw : Box(FontDraw => {}),
+		value : font,
+	}.{
+		key : Handle(font) -> U64
+		key = |Handle.(font_handle)| font_handle.key
+
+		value : Handle(font) -> font
+		value = |Handle.(font_handle)| font_handle.value
 	}
 
-	Font : [DefaultFont, CustomFont(FontResource)]
+	handle : U64, font -> Handle(font)
+	handle = |key, value| Handle.({ key, value })
 
-	font_key : Font.Font -> U64
-	font_key = |font| match font {
-		DefaultFont => 0
-		CustomFont(FontResource.(resource)) => resource.key
-	}
-
-	custom_font : { key : U64, measure! : FontMeasure => { width : F32, height : F32 }, draw! : FontDraw => {} } -> Font.Font
-	custom_font = |config| CustomFont(FontResource.({ key: config.key, measure: Box.box(config.measure!), draw: Box.box(config.draw!) }))
-
-	measure_font! : FontResource, FontMeasure => { width : F32, height : F32 }
-	measure_font! = |FontResource.(resource), config| (Box.unbox(resource.measure))(config)
-
-	draw_font! : FontResource, FontDraw => {}
-	draw_font! = |FontResource.(resource), config| (Box.unbox(resource.draw))(config)
+	measure : Handle(font), RrtFont.Measure -> RrtFont.Size
+		where [font.Measurable]
+	measure = |font_handle, config| RrtFont.measure(font_handle.value(), config)
 }

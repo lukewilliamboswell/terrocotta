@@ -3,6 +3,7 @@ import Assets
 import Color
 import Element
 import Identity exposing [NodeId]
+import Text
 
 LayoutTypes := [].{
 
@@ -98,7 +99,7 @@ LayoutTypes := [].{
 
 	TextNodeData : {
 		content_index : U64,
-		config : Element.TextConfig,
+		config : Text.Config,
 		line_height : F32,
 		wrap_width : F32,
 		min_width : F32,
