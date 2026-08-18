@@ -100,7 +100,7 @@ Program :: [].{
 		focused : U64,
 		scroll : Dict(U64, ScrollState),
 		drag : Drag.DragState,
-		commands : List(Render.Command(font)),
+		screen : LayoutTypes.Size,
 	}
 
 	## Pair the application's initial model with the font used by layout and
@@ -137,7 +137,8 @@ Program :: [].{
 		}
 
 		render! = |state, frame| {
-			Render.draw_commands!(frame, state.commands, |color| frame.from_rgba(color))
+			commands = state.layout.to_commands(state.screen).map_err(|_| Exit(1))?
+			Render.draw_commands!(frame, commands, |color| frame.from_rgba(color))
 		}
 
 		{
@@ -158,7 +159,7 @@ Program :: [].{
 			focused: 0,
 			scroll: Dict.empty(),
 			drag: Idle,
-			commands: [],
+			screen: { w: 0, h: 0 },
 		}
 	}
 
@@ -202,8 +203,7 @@ Program :: [].{
 		}
 
 		$layout = $layout.solve(screen)?
-		commands = $layout.to_commands(screen)?
-		Ok({ model: $model, layout: $layout, event_bindings: $event_bindings, hovered, focused, scroll, drag, commands })
+		Ok({ model: $model, layout: $layout, event_bindings: $event_bindings, hovered, focused, scroll, drag, screen })
 	}
 }
 
