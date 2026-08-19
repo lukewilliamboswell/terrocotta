@@ -908,6 +908,12 @@ collect_box_ancestor_ids = |nodes, node_index, acc| {
 	}
 }
 
+is_image_node : LayoutNode -> Bool
+is_image_node = |node| match node.kind {
+	ImageNode(_) => Bool.True
+	_ => Bool.False
+}
+
 # --- Render Command Extraction (Private) ---
 
 is_offscreen : Bounds, Size -> Bool
@@ -1998,11 +2004,12 @@ expect {
 
 ## Hit testing should ignore non-box nodes and return the containing box.
 expect {
+	texture = { ..Texture.stub, width: 20, height: 20 }
 	root_cfg = fixed_cfg(100, 100)
 	build = || {
 		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
-		$layout = add_text($layout, 200, "content")?
+		$layout = add_image($layout, 200, texture)?
 		$layout = close_box($layout)?
 		$layout.solve({ w: 100, h: 100 })
 	}
@@ -2010,13 +2017,58 @@ expect {
 	match build() {
 		Ok(layout) => {
 			root = layout.nodes.get(0)?
-			text_node = layout.nodes.get(1)?
+			image = layout.nodes.get(1)?
 			match layout.hit_test({ x: 10, y: 10 }) {
-				Ok(Hit(node_id)) => node_id == root.id and node_id != text_node.id
+				Ok(Hit(node_id)) => node_id == root.id and node_id != image.id
 				_ => Bool.False
 			}
 		}
 		Err(_) => Bool.False
+	}
+}
+
+## Image nodes should fill the parent box's inner size.
+expect {
+	texture = { ..Texture.stub, width: 1024, height: 1024 }
+	root_cfg = Element.style
+		.width(Fixed(300))
+		.height(Fixed(300))
+	build = || {
+		var $tree = Layout.test_layout()
+		$tree = open_box($tree, Auto, root_cfg)?
+		$tree = add_image($tree, 200, texture)?
+		$tree = close_box($tree)?
+		$tree.solve({ w: 300, h: 300 })
+	}
+
+	match build() {
+		Ok(tree) => {
+			image = tree.nodes.get(1)?
+			image.size.w == 300 and image.size.h == 300
+		}
+		Err(_) => Bool.False
+	}
+}
+
+## Pure command extraction preserves stub metadata and solved image bounds.
+expect {
+	texture = { ..Texture.stub, width: 32, height: 16 }
+	root_cfg = fixed_cfg(100, 50)
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, root_cfg)?
+		$layout = add_image($layout, 200, texture)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 50 })?
+		$layout.to_commands({ w: 100, h: 50 })
+	}
+
+	match build() {
+		Ok([Image(image)]) => image.width == 100
+			and image.height == 50
+				and image.texture.width == 32
+					and image.texture.height == 16
+		_ => Bool.False
 	}
 }
 
@@ -2066,6 +2118,7 @@ expect {
 ## Closing nested boxes with mixed child kinds should preserve direct-child
 ## ranges independently of DFS node order.
 expect {
+	texture = { ..Texture.stub, width: 8, height: 9 }
 	root_cfg = Element.style
 		.width(Fit({ min: 0, max: 1000 }))
 		.height(Fit({ min: 0, max: 1000 }))
@@ -2077,21 +2130,25 @@ expect {
 	build = || {
 		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)? # root: 0
-		$layout = add_text($layout, 100, "first")? # root child: 1
+		$layout = add_image($layout, 100, texture)? # root child: 1
 		$layout = open_box($layout, Auto, nested_cfg)? # root child: 2
-		$layout = add_text($layout, 101, "nested")? # nested child: 3
+		$layout = add_image($layout, 101, texture)? # nested child: 3
 		$layout = close_box($layout)?
 		$layout = close_box($layout)?
 		Ok($layout)
 	}
 
 	match build() {
-		Ok(layout) => match (layout.nodes.get(0), layout.nodes.get(2)) {
-			(Ok(root), Ok(nested)) => layout.child_indices == [3, 1, 2]
+		Ok(layout) => match (layout.nodes.get(0), layout.nodes.get(2), layout.nodes.get(1), layout.nodes.get(3)) {
+			(Ok(root), Ok(nested), Ok(image_a), Ok(image_b)) => layout.child_indices == [3, 1, 2]
 				and root.child_start == 1
 					and root.child_count == 2
 						and nested.child_start == 0
 							and nested.child_count == 1
+								and is_image_node(image_a)
+									and is_image_node(image_b)
+										and root.intrinsic == { w: 16, h: 9 }
+											and nested.intrinsic == { w: 8, h: 9 }
 			_ => Bool.False
 		}
 		Err(_) => Bool.False
