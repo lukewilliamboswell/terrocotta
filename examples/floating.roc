@@ -1,40 +1,26 @@
 ## Minimal floating-root demonstration.
-app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-14-549b94e",
 }
 
 import rr.App
 import rr.Draw
-import rr.Host
 
-import tc.Color
 import tc.Element exposing [box, text, View, style, default_floating_config]
+import tc.Font
 import tc.Widget exposing [column, row, button]
 import tc.Program
-import tc.Render
 import tc.Theme
 
 theme = Theme.light
 
-Model : Program.State(AppModel, Msg)
+Model : Program.State(AppModel, Msg, Draw.Font)
 
 AppModel : { attach : Element.AttachPoint }
 
 Msg : Element.AttachPoint
-
-init! : Host => Try(AppModel, [])
-init! = |_host| Ok({ attach: Center })
-
-measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| {
-	Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: Draw.default_font,
-	})
-}
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| {
@@ -42,7 +28,7 @@ update = |model, msg| {
 }
 
 
-view : AppModel -> View(Msg)
+view : AppModel -> View(Msg, Draw.Font)
 view = |model| {
 	box(
 		Id("page"),
@@ -52,7 +38,6 @@ view = |model| {
 			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
 			.gap(theme.gap)
 			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
 			.font_size(theme.font_size)
 			.font_color(theme.palette.background.base.content),
 		[],
@@ -127,14 +112,10 @@ view = |model| {
 	)
 }
 
-program : {
-	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: App.default.with_title("Floating Root").with_size({ width: 720, height: 520 }),
-	init!,
-	view,
-	update,
-	measure_text!,
-})
+init! : App.Init(Program.Start(AppModel, Draw.Font), [])
+init! = App.init(
+	App.static_config(App.default.with_title("Floating Root").with_size({ width: 720, height: 520 })),
+	|_startup| Ok(Program.start({ attach: Center }, Font.handle(0, Draw.default_font!()))),
+)
+
+program = Program.new(init!, update, view)

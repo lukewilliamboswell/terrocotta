@@ -1,41 +1,28 @@
 ## Scrollable list demonstration.
-app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
-    tc: "../package/main.roc",
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray/platform/main.roc",
+	tc: "../package/main.roc",
+	roc: "nightly-2026-08-14-549b94e",
 }
 
 import rr.App
 import rr.Draw
-import rr.Host
 
 import tc.Element exposing [box, text, View, style]
+import tc.Font
 import tc.Program
-import tc.Render
 import tc.Theme
 
 theme = Theme.light
 
-Model : Program.State({}, Msg)
+Model : Program.State({}, Msg, Draw.Font)
 
 Msg : []
-
-init! : Host => Try({}, [])
-init! = |_host| Ok({})
-
-measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| {
-	Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: Draw.default_font,
-	})
-}
 
 update : {}, Msg -> {}
 update = |model, _msg| model
 
-row : U64 -> View(Msg)
+row : U64 -> View(Msg, Draw.Font)
 row = |index| {
 	box(
 		IdI("scroll-row", index),
@@ -49,9 +36,13 @@ row = |index| {
 	)
 }
 
-view : {} -> View(Msg)
+view : {} -> View(Msg, Draw.Font)
 view = |_model| {
-	rows = (1..<20).map(row).collect()
+	var $rows = []
+	for index in 1..<20 {
+		$rows = $rows.append(row(index))
+	}
+	#rows = (1..<20).iter().map(row).collect()
 	box(
 		Id("page"),
 		|_| style
@@ -60,7 +51,6 @@ view = |_model| {
 			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
 			.gap(theme.gap)
 			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
 			.font_size(theme.font_size)
 			.font_color(theme.palette.background.base.content),
 		[],
@@ -77,20 +67,16 @@ view = |_model| {
 					.radius(theme.radius)
 					.overflow(Hidden, Scroll),
 				[],
-				rows,
+				$rows,
 			),
 		],
 	)
 }
 
-program : {
-	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 }),
-	init!,
-	view,
-	update,
-	measure_text!,
-})
+init! : App.Init(Program.Start({}, Draw.Font), [])
+init! = App.init(
+	App.static_config(App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 })),
+	|_startup| Ok(Program.start({}, Font.handle(0, Draw.default_font!()))),
+)
+
+program = Program.new(init!, update, view)

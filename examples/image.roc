@@ -1,26 +1,23 @@
 ## Renders an image centered in a box with interactive width and height controls.
-app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst",
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray/platform/main.roc",
+	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-14-549b94e",
 }
 
 import rr.App
 import rr.Draw
-import rr.Host
-import rr.Assets as RRAssets
+import rr.Assets
+import rrt.Texture
 
-import tc.Element exposing [View, box, default_font, image, style]
+import tc.Element exposing [View, box, image, style]
 import tc.Font
 import tc.Program
-import tc.Render
 import tc.Theme
 import tc.Widget
-import tc.Assets exposing [Texture]
 
 theme = Theme.dark
-
-image_path : Str
-image_path = "examples/assets/rocotta.png"
 
 size_options : List(Str)
 size_options = ["100px", "200px", "300px", "400px", "Fit (natural texture size, clipped)", "Grow (fill container)"]
@@ -36,10 +33,9 @@ index_to_sizing = |index| match index {
 	_ => Fixed(300)
 }
 
-Model : Program.State(AppModel, Msg)
+Model : Program.State(AppModel, Msg, Draw.Font)
 
 AppModel : {
-	font : Font.Font,
 	texture : Texture,
 	select_width : { open : Bool, selected : U64 },
 	select_height : { open : Bool, selected : U64 },
@@ -52,27 +48,24 @@ Msg : [
 	SelectHeight(U64),
 ]
 
-init! : Host => Try(AppModel, [Exit(U64), ..])
-init! = |_host| {
-	texture = RRAssets.Texture.load!(image_path).map_err(|_| Exit(1))?
-	Ok({
-		font: default_font,
-		# Placeholder texture; tc.Assets.load_texture! is not wired up yet.
-		texture: texture,
-		select_width: { open: False, selected: 2 },
-		select_height: { open: False, selected: 2 },
-	})
-}
-
-measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| {
-	Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: Draw.default_font,
-	})
-}
+init! : App.Init(Program.Start(AppModel, Draw.Font), _)
+init! = App.init(
+	App.static_config(App.default.with_title("Image Example").with_size({ width: 700, height: 500 })),
+	|_startup| {
+		store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
+		texture = Assets.load_texture!(store, "rocotta.png")?
+		Ok(
+			Program.start(
+				{
+					texture,
+					select_width: { open: False, selected: 2 },
+					select_height: { open: False, selected: 2 },
+				},
+				Font.handle(0, Draw.default_font!()),
+			),
+		)
+	},
+)
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| match msg {
@@ -82,7 +75,7 @@ update = |model, msg| match msg {
 	SelectHeight(index) => { ..model, select_height: { open: False, selected: index } }
 }
 
-view : AppModel -> View(Msg)
+view : AppModel -> View(Msg, Draw.Font)
 view = |model| {
 	box(
 		Auto,
@@ -91,7 +84,6 @@ view = |model| {
 			.gap(theme.gap * 2)
 			.pad((theme.gap * 2, theme.gap * 2, theme.gap * 2, theme.gap * 2))
 			.background(theme.palette.background.base.fill)
-			.font_family(model.font)
 			.font_size(theme.font_size)
 			.child_align({ x: Center, y: Center }),
 		[],
@@ -160,14 +152,4 @@ view = |model| {
 	)
 }
 
-program : {
-	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: App.default.with_title("Image Example").with_size({ width: 700, height: 500 }),
-	init!,
-	view,
-	update,
-	measure_text!,
-})
+program = Program.new(init!, update, view)

@@ -1,6 +1,5 @@
 package
 	[
-		Assets,
 		Color,
 		Palette,
 		Theme,

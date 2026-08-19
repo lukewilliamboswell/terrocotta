@@ -1,5 +1,4 @@
 ## Shared layout geometry and flat tree data types.
-import Assets
 import Color
 import Element
 import Identity exposing [NodeId]
@@ -108,7 +107,7 @@ LayoutTypes := [].{
 	}
 
 	ImageNodeData : {
-		texture : Assets.Texture,
+		texture_index : U64,
 	}
 
 	LayoutNodeKind : [BoxNode(BoxNodeData), TextNode(TextNodeData), ImageNode(ImageNodeData)]

@@ -1,9 +1,9 @@
 ## UI types and helpers for the Roc-Clay layout engine.
 ## Provides text, box, and stack for building view trees as Iter(UIMessage).
 import Color
-import Assets
 import Event
 import Font
+import rrt.Texture
 
 Element := [].{
 
@@ -287,7 +287,7 @@ Element := [].{
 		OpenBox(ElementId, BoxStatus -> BoxConfig(font), List(Event.Handler(msg))),
 		CloseBox,
 		Text(Str),
-		Image(Assets.Texture),
+		Image(Texture),
 	]
 
 	View(msg, font) : Iter(ElementOp(msg, font))
@@ -330,7 +330,7 @@ Element := [].{
 	text = |content| [Text(content)].iter()
 
 	## Create a image leaf element.
-	image : Assets.Texture -> View(msg, font)
+	image : Texture -> View(msg, font)
 	image = |texture| [Image(texture)].iter()
 
 	## Create a box container element.

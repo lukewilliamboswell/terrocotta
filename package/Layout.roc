@@ -1,7 +1,6 @@
 ## Flat layout layout - flex-box layout solver.
 ## Uses a layout layout stack (flat List-of-structs) built via push/pop message API.
 ## Intrinsic sizes are computed during construction.
-import Assets
 import Color
 import Element
 import Font exposing [Measurable]
@@ -27,10 +26,12 @@ import Stack
 import Text
 import TextMeasureCache
 import rrt.Font as RrtFont
+import rrt.Texture
 
 # --- Public API ---
 Layout(draw) :: {
 	nodes : List(LayoutNode),
+	textures : List(Texture),
 	text_contents : List(Str),
 	text_lines : List(Text.Line),
 	text_cache : TextMeasureCache,
@@ -52,6 +53,7 @@ Layout(draw) :: {
 		font_key = default_font.key()
 		{
 			nodes: [],
+			textures: [],
 			text_contents: [],
 			text_lines: [],
 			text_cache: TextMeasureCache.new(),
@@ -82,6 +84,7 @@ Layout(draw) :: {
 	clear = |layout| {
 		..layout,
 		nodes: layout.nodes.clear(),
+		textures: layout.textures.clear(),
 		text_contents: layout.text_contents.clear(),
 		text_lines: layout.text_lines.clear(),
 		text_cache: layout.text_cache.next_generation(),
@@ -719,15 +722,23 @@ refresh_intrinsics = |layout| {
 	Ok({ ..layout, nodes: $nodes })
 }
 
-add_image : Layout(draw), NodeId, Assets.Texture -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
+add_image : Layout(draw), NodeId, Texture -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
 add_image = |layout, id, texture| {
+	layout_with_image = add_image_sized(layout, id, { w: texture.width, h: texture.height })?
+	Ok({ ..layout_with_image, textures: layout_with_image.textures.append(texture) })
+}
+
+## Add image geometry without requiring a host-created handle. Production
+## callers immediately append the matching Texture in add_image; layout tests
+## use this helper when only intrinsic sizing and tree behavior are relevant.
+add_image_sized : Layout(draw), NodeId, Size -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
+add_image_sized = |layout, id, measured| {
 	idx = layout.nodes.len()
-	info = Assets.info(texture)
-	measured = { w: info.width, h: info.height }
+	texture_index = layout.textures.len()
 	parent = parent_from_stack(layout)
 	node = {
 		id: id,
-		kind: ImageNode({ texture: texture }),
+		kind: ImageNode({ texture_index: texture_index }),
 		parent,
 		child_start: 0,
 		child_count: 0,
@@ -1024,7 +1035,8 @@ emit_node_commands = |layout, index, root_index, root_expand, screen, commands| 
 					)
 				}
 			}
-			ImageNode({ texture }) => {
+			ImageNode({ texture_index: texture_index }) => {
+				texture = layout.textures.get(texture_index)?
 				$commands = $commands.append(
 					Image({
 						x: node.position.x,
@@ -2000,12 +2012,11 @@ expect {
 
 ## Hit testing should ignore non-box nodes and return the containing box.
 expect {
-	texture = Box.box({ handle: 1, width: 20, height: 20 })
 	root_cfg = fixed_cfg(100, 100)
 	build = || {
 		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
-		$layout = add_image($layout, 200, texture)?
+		$layout = add_image_sized($layout, 200, { w: 20, h: 20 })?
 		$layout = close_box($layout)?
 		$layout.solve({ w: 100, h: 100 })
 	}
@@ -2025,14 +2036,13 @@ expect {
 
 ## Image nodes should fill the parent box's inner size.
 expect {
-	texture = Box.box({ handle: 1, width: 1024, height: 1024 })
 	root_cfg = Element.style
 		.width(Fixed(300))
 		.height(Fixed(300))
 	build = || {
 		var $tree = Layout.test_layout()
 		$tree = open_box($tree, Auto, root_cfg)?
-		$tree = add_image($tree, 200, texture)?
+		$tree = add_image_sized($tree, 200, { w: 1024, h: 1024 })?
 		$tree = close_box($tree)?
 		$tree.solve({ w: 300, h: 300 })
 	}
@@ -2092,7 +2102,6 @@ expect {
 ## Closing nested boxes with mixed child kinds should preserve direct-child
 ## ranges independently of DFS node order.
 expect {
-	texture = Box.box({ handle: 1, width: 8, height: 9 })
 	root_cfg = Element.style
 		.width(Fit({ min: 0, max: 1000 }))
 		.height(Fit({ min: 0, max: 1000 }))
@@ -2104,9 +2113,9 @@ expect {
 	build = || {
 		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)? # root: 0
-		$layout = add_image($layout, 100, texture)? # root child: 1
+		$layout = add_image_sized($layout, 100, { w: 8, h: 9 })? # root child: 1
 		$layout = open_box($layout, Auto, nested_cfg)? # root child: 2
-		$layout = add_image($layout, 101, texture)? # nested child: 3
+		$layout = add_image_sized($layout, 101, { w: 8, h: 9 })? # nested child: 3
 		$layout = close_box($layout)?
 		$layout = close_box($layout)?
 		Ok($layout)

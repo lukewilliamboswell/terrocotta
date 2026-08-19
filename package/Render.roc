@@ -1,11 +1,13 @@
 ## Render command types for Roc-Clay layout commands.
-import Assets
 import Color
 import Element
+import rrt.Texture
 
 RenderVector2 : { x : F32, y : F32 }
 
 RenderRect : { x : F32, y : F32, width : F32, height : F32 }
+
+TextureDraw : { texture : Texture, source : RenderRect, dest : RenderRect, origin : RenderVector2, rotation : F32, tint : Color.Rgba }
 
 RenderTextRaw : {
 	pos : RenderVector2,
@@ -92,7 +94,7 @@ RenderImageRaw := {
 	y : F32,
 	width : F32,
 	height : F32,
-	texture : Assets.Texture,
+	texture : Texture,
 }
 
 RenderTextSize : { width : F32, height : F32 }
@@ -137,6 +139,7 @@ Render := [].{
 				},
 			} => {},
 			frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
+			frame.texture! : frame, TextureDraw => {},
 			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 		]
 	draw_commands! = |frame, commands| {
@@ -174,6 +177,7 @@ draw_region! : frame, List(Render.Command(font)), [NoScissor, Scissor(RenderRect
 			},
 		} => {},
 		frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
+		frame.texture! : frame, TextureDraw => {},
 		frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 	]
 draw_region! = |frame, commands, scissor| {
@@ -270,7 +274,10 @@ draw_region! = |frame, commands, scissor| {
 					})
 					draw_region!(frame, rest, scissor)
 				}
-				Image(_) => draw_region!(frame, rest, scissor)
+				Image(img) => {
+					frame.texture!(position_texture(img))
+					draw_region!(frame, rest, scissor)
+				}
 				ScissorStart(bounds) => {
 					next = match scissor {
 						NoScissor => bounds
@@ -291,6 +298,16 @@ draw_region! = |frame, commands, scissor| {
 				ScissorEnd => Err(Exit(1))
 			}
 		}
+}
+
+position_texture : RenderImageRaw -> TextureDraw
+position_texture = |img| {
+	texture: img.texture,
+	source: { x: 0, y: 0, width: img.texture.width, height: img.texture.height },
+	dest: { x: img.x, y: img.y, width: img.width, height: img.height },
+	origin: { x: 0, y: 0 },
+	rotation: 0,
+	tint: Color.to_rrt(Color.white),
 }
 
 ## Split commands following a ScissorStart into the nested region up to the

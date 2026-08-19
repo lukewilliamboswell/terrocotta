@@ -1,25 +1,26 @@
 ## Example showcasing theme-aware widgets.
-app [Model, program] { rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.9.0/3sKTYuHvxSV77dDyZrxuUYgfrAarL6ZtasWMPeH32udh.tar.zst", tc: "../package/main.roc" }
+app [Model, Msg, program] {
+	rr: platform "../../roc-ray/platform/main.roc",
+	tc: "../package/main.roc",
+	roc: "nightly-2026-08-14-549b94e",
+}
 
 import rr.App
-import rr.Host
 import rr.Draw
 import tc.Color
 import tc.Element exposing [View, box, style]
 import tc.Font
-import tc.Layout
 import tc.Program
-import tc.Render
 import tc.Theme
 import tc.Widget
 
-Model : Program.State(AppModel, Msg)
+Model : Program.State(AppModel, Msg, Draw.Font)
 
-AppModel : { theme : Theme, font : Font.Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
+AppModel : { theme : Theme, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
 
 Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool)]
 
-theme_card : Theme, Str, AppModel -> View
+theme_card : Theme, Str, AppModel -> View(Msg, Draw.Font)
 theme_card = |theme, name, model| {
 	Widget.panel(
 		theme,
@@ -98,7 +99,7 @@ theme_card = |theme, name, model| {
 	)
 }
 
-view : AppModel -> View
+view : AppModel -> View(Msg, Draw.Font)
 view = |model| {
 	box(
 		Auto,
@@ -108,7 +109,6 @@ view = |model| {
 			.gap(model.theme.gap)
 			.direction(Col)
 			.child_align({ x: Start, y: Start })
-			.font_family(model.font)
 			.font_size(model.theme.font_size),
 		[],
 		[
@@ -128,36 +128,19 @@ update = |model, msg| {
 	}
 }
 
-init! : Host => Try(AppModel, [])
-init! = |_host| {
-	Ok({
-		theme: Theme.dark,
-		font: Element.default_font,
-		slider_value: 45,
-		select_open: False,
-		select_selected: 0,
-		toggle_on: False,
-	})
-}
+init! : App.Init(Program.Start(AppModel, Draw.Font), [])
+init! = App.init(
+	App.static_config(App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })),
+	|_startup| {
+		model = {
+			theme: Theme.dark,
+			slider_value: 45,
+			select_open: False,
+			select_selected: 0,
+			toggle_on: False,
+		}
+		Ok(Program.start(model, Font.handle(0, Draw.default_font!())))
+	},
+)
 
-measure_text! : Render.MeasureTextRaw => Render.TextSize
-measure_text! = |config| {
-	Draw.measure_text!({
-		text: config.text,
-		size: config.size,
-		spacing: config.spacing,
-		font: Draw.default_font,
-	})
-}
-
-program : {
-	init! : { config : App.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host, Draw.Frame => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 }),
-	init!,
-	view,
-	update,
-	measure_text!,
-})
+program = Program.new(init!, update, view)
