@@ -14,6 +14,7 @@ import LayoutTypes exposing [
 	LayoutNodeKind.*,
 	ClipSource.*,
 	FloatingTarget.*,
+	ImageNodeData,
 	ParentIndex.*,
 	Placement.*,
 	Pos,
@@ -31,7 +32,6 @@ import rrt.Texture
 # --- Public API ---
 Layout(draw) :: {
 	nodes : List(LayoutNode),
-	textures : List(Texture),
 	text_contents : List(Str),
 	text_lines : List(Text.Line),
 	text_cache : TextMeasureCache,
@@ -53,7 +53,6 @@ Layout(draw) :: {
 		font_key = default_font.key()
 		{
 			nodes: [],
-			textures: [],
 			text_contents: [],
 			text_lines: [],
 			text_cache: TextMeasureCache.new(),
@@ -84,7 +83,6 @@ Layout(draw) :: {
 	clear = |layout| {
 		..layout,
 		nodes: layout.nodes.clear(),
-		textures: layout.textures.clear(),
 		text_contents: layout.text_contents.clear(),
 		text_lines: layout.text_lines.clear(),
 		text_cache: layout.text_cache.next_generation(),
@@ -724,21 +722,16 @@ refresh_intrinsics = |layout| {
 
 add_image : Layout(draw), NodeId, Texture -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
 add_image = |layout, id, texture| {
-	layout_with_image = add_image_sized(layout, id, { w: texture.width, h: texture.height })?
-	Ok({ ..layout_with_image, textures: layout_with_image.textures.append(texture) })
-}
-
-## Add image geometry without requiring a host-created handle. Production
-## callers immediately append the matching Texture in add_image; layout tests
-## use this helper when only intrinsic sizing and tree behavior are relevant.
-add_image_sized : Layout(draw), NodeId, Size -> Try(Layout(draw), [OutOfBounds, DuplicateNodeId, ..])
-add_image_sized = |layout, id, measured| {
 	idx = layout.nodes.len()
-	texture_index = layout.textures.len()
+	measured = { w: texture.width, h: texture.height }
 	parent = parent_from_stack(layout)
+	image_data : ImageNodeData
+	image_data = {
+		texture: texture,
+	}
 	node = {
 		id: id,
-		kind: ImageNode({ texture_index: texture_index }),
+		kind: ImageNode(image_data),
 		parent,
 		child_start: 0,
 		child_count: 0,
@@ -915,12 +908,6 @@ collect_box_ancestor_ids = |nodes, node_index, acc| {
 	}
 }
 
-is_image_node : LayoutNode -> Bool
-is_image_node = |node| match node.kind {
-	ImageNode(_) => Bool.True
-	_ => Bool.False
-}
-
 # --- Render Command Extraction (Private) ---
 
 is_offscreen : Bounds, Size -> Bool
@@ -1035,8 +1022,7 @@ emit_node_commands = |layout, index, root_index, root_expand, screen, commands| 
 					)
 				}
 			}
-			ImageNode({ texture_index: texture_index }) => {
-				texture = layout.textures.get(texture_index)?
+			ImageNode({ texture }) => {
 				$commands = $commands.append(
 					Image({
 						x: node.position.x,
@@ -2016,7 +2002,7 @@ expect {
 	build = || {
 		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)?
-		$layout = add_image_sized($layout, 200, { w: 20, h: 20 })?
+		$layout = add_text($layout, 200, "content")?
 		$layout = close_box($layout)?
 		$layout.solve({ w: 100, h: 100 })
 	}
@@ -2024,33 +2010,11 @@ expect {
 	match build() {
 		Ok(layout) => {
 			root = layout.nodes.get(0)?
-			image = layout.nodes.get(1)?
+			text_node = layout.nodes.get(1)?
 			match layout.hit_test({ x: 10, y: 10 }) {
-				Ok(Hit(node_id)) => node_id == root.id and node_id != image.id
+				Ok(Hit(node_id)) => node_id == root.id and node_id != text_node.id
 				_ => Bool.False
 			}
-		}
-		Err(_) => Bool.False
-	}
-}
-
-## Image nodes should fill the parent box's inner size.
-expect {
-	root_cfg = Element.style
-		.width(Fixed(300))
-		.height(Fixed(300))
-	build = || {
-		var $tree = Layout.test_layout()
-		$tree = open_box($tree, Auto, root_cfg)?
-		$tree = add_image_sized($tree, 200, { w: 1024, h: 1024 })?
-		$tree = close_box($tree)?
-		$tree.solve({ w: 300, h: 300 })
-	}
-
-	match build() {
-		Ok(tree) => {
-			image = tree.nodes.get(1)?
-			image.size.w == 300 and image.size.h == 300
 		}
 		Err(_) => Bool.False
 	}
@@ -2113,25 +2077,21 @@ expect {
 	build = || {
 		var $layout = Layout.test_layout()
 		$layout = open_box($layout, Auto, root_cfg)? # root: 0
-		$layout = add_image_sized($layout, 100, { w: 8, h: 9 })? # root child: 1
+		$layout = add_text($layout, 100, "first")? # root child: 1
 		$layout = open_box($layout, Auto, nested_cfg)? # root child: 2
-		$layout = add_image_sized($layout, 101, { w: 8, h: 9 })? # nested child: 3
+		$layout = add_text($layout, 101, "nested")? # nested child: 3
 		$layout = close_box($layout)?
 		$layout = close_box($layout)?
 		Ok($layout)
 	}
 
 	match build() {
-		Ok(layout) => match (layout.nodes.get(0), layout.nodes.get(2), layout.nodes.get(1), layout.nodes.get(3)) {
-			(Ok(root), Ok(nested), Ok(image_a), Ok(image_b)) => layout.child_indices == [3, 1, 2]
+		Ok(layout) => match (layout.nodes.get(0), layout.nodes.get(2)) {
+			(Ok(root), Ok(nested)) => layout.child_indices == [3, 1, 2]
 				and root.child_start == 1
 					and root.child_count == 2
 						and nested.child_start == 0
 							and nested.child_count == 1
-								and is_image_node(image_a)
-									and is_image_node(image_b)
-										and root.intrinsic == { w: 16, h: 9 }
-											and nested.intrinsic == { w: 8, h: 9 }
 			_ => Bool.False
 		}
 		Err(_) => Bool.False

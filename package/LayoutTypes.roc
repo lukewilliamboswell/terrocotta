@@ -3,6 +3,7 @@ import Color
 import Element
 import Identity exposing [NodeId]
 import Text
+import rrt.Texture
 
 LayoutTypes := [].{
 
@@ -107,7 +108,7 @@ LayoutTypes := [].{
 	}
 
 	ImageNodeData : {
-		texture_index : U64,
+		texture : Texture,
 	}
 
 	LayoutNodeKind : [BoxNode(BoxNodeData), TextNode(TextNodeData), ImageNode(ImageNodeData)]
