@@ -1292,7 +1292,7 @@ init! = |config, startup| {
 	default_font = Draw.default_font!()
 	store_config = match App.read_env!(startup, "SCREWBOT_ASSET_ROOT") {
 		Ok(root) => Assets.absolute_directory(root)
-		Err(NotFound) => Assets.beside_executable("examples/assets")
+		Err(NotFound) => Assets.working_directory("examples/assets")
 	}
 	store = Assets.Store.open!(Assets.with_manifest(store_config, screwbot_manifest)).map_err(|_| Exit(1))?
 	font_asset = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 32 }).map_err(|_| Exit(1))?
