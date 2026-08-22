@@ -1,13 +1,12 @@
 ## Basic Terracotta renderer for current roc-ray frame capabilities.
 ## Resource-heavy applications can supply their own adapter, as Screwbot does.
 import rr.Draw
-import rr.Text
 
 import tc.Color
 import tc.Element
 import tc.Render
 
-RayFont : [NoRayFont, LoadedRayFont(Draw.Font)]
+RayFonts : { default : Draw.Font, custom : [NoRayFont, LoadedRayFont(Draw.Font)] }
 
 RocRayRenderer := [].{
 
@@ -17,34 +16,33 @@ RocRayRenderer := [].{
 
 	default! : {} => Bundle
 	default! = |{}| {
-		default_metrics = Text.metrics!(Text.default_font)
-		renderer_for(NoRayFont, Element.default_font, default_metrics)
+		default_font = Draw.default_font!()
+		renderer_for({ default: default_font, custom: NoRayFont }, Element.default_font, default_font)
 	}
 
 	## Snapshot the default and loaded fonts once; both may occur in a view.
 	with_font! : Draw.Font => Bundle
 	with_font! = |font| {
-		default_metrics = Text.metrics!(Text.default_font)
-		font_metrics = Text.metrics!(font)
+		default_font = Draw.default_font!()
 		custom_font = Element.custom_font({
 			key: 1,
-			measure: |config| font_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing }),
+			measure: |config| font.measure({ text: config.text, size: config.size, spacing: config.spacing }),
 			draw!: |_config| {},
 		})
-		renderer_for(LoadedRayFont(font), custom_font, default_metrics)
+		renderer_for({ default: default_font, custom: LoadedRayFont(font) }, custom_font, default_font)
 	}
 }
 
-renderer_for : RayFont, Element.Font, Text.Metrics -> RocRayRenderer.Bundle
-renderer_for = |ray_font, font, default_metrics| {
+renderer_for : RayFonts, Element.Font, Draw.Font -> RocRayRenderer.Bundle
+renderer_for = |ray_fonts, font, default_font| {
 	measure_text = |config| match config.font {
-		DefaultFont => default_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
+		DefaultFont => default_font.measure({ text: config.text, size: config.size, spacing: config.spacing })
 		CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
 	}
 	renderer = Render.adapter({
 		render!: |frame, _data, _render_frame, commands| {
 			frame.clear!(Draw.from_rgba({ r: 255, g: 255, b: 255, a: 255 }))
-			render_range!(frame, ray_font, commands, 0, commands.len())
+			render_range!(frame, ray_fonts, commands, 0, commands.len())
 			frame.fps!({ pos: { x: 0, y: 0 }, size: 16, color: ray_color(Color.gray) })
 		},
 	})
@@ -57,8 +55,8 @@ ray_color = |color| Draw.from_rgba({ r: color.r, g: color.g, b: color.b, a: colo
 draw_rect! : Draw.Frame, F32, F32, F32, F32, Color => {}
 draw_rect! = |frame, x, y, width, height, color| frame.rectangle!({ x, y, width, height, style: Draw.filled(ray_color(color)) })
 
-draw_command! : Draw.Frame, RayFont, Render.Command => {}
-draw_command! = |frame, ray_font, command| match command {
+draw_command! : Draw.Frame, RayFonts, Render.Command => {}
+draw_command! = |frame, ray_fonts, command| match command {
 	Rectangle(rect) => draw_rect!(frame, rect.x, rect.y, rect.width, rect.height, rect.color)
 	RoundedRectangle(rect) => frame.rounded_rectangle!({
 		x: rect.x,
@@ -112,10 +110,10 @@ draw_command! = |frame, ray_font, command| match command {
 			size: item.font_size,
 			spacing: item.spacing,
 			color: ray_color(item.color),
-			font: Draw.default_font,
+			font: ray_fonts.default,
 			align: Draw.align_top_left,
 		})
-		CustomFont(resource) => match ray_font {
+		CustomFont(resource) => match ray_fonts.custom {
 			NoRayFont => Element.draw_font!(
 				resource,
 				{
@@ -160,8 +158,8 @@ find_scissor_end = |commands, index, depth| {
 	}
 }
 
-render_range! : Draw.Frame, RayFont, List(Render.Command), U64, U64 => {}
-render_range! = |frame, ray_font, commands, index, end| {
+render_range! : Draw.Frame, RayFonts, List(Render.Command), U64, U64 => {}
+render_range! = |frame, ray_fonts, commands, index, end| {
 	if index < end {
 		match commands.get(index) {
 			Err(_) => {}
@@ -172,13 +170,13 @@ render_range! = |frame, ray_font, commands, index, end| {
 					# Current Roc mis-specializes roc-ray's hosted scissor call when a
 					# Draw.Frame crosses this adapter boundary. Preserve nested command
 					# traversal until that compiler limitation is removed.
-					render_range!(frame, ray_font, commands, index + 1, close)
-					render_range!(frame, ray_font, commands, close + 1, end)
+					render_range!(frame, ray_fonts, commands, index + 1, close)
+					render_range!(frame, ray_fonts, commands, close + 1, end)
 				}
 				ScissorEnd => {}
 				_ => {
-					draw_command!(frame, ray_font, command)
-					render_range!(frame, ray_font, commands, index + 1, end)
+					draw_command!(frame, ray_fonts, command)
+					render_range!(frame, ray_fonts, commands, index + 1, end)
 				}
 			}
 		}

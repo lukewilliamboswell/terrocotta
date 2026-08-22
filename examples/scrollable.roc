@@ -1,12 +1,12 @@
 ## Scrollable list demonstration.
 app [Model, Msg, program] {
-	rr: platform "../../roc-ray-elm/platform/main.roc",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc1/G7CQg3PE51ioJgNENceqkbQSjjX5ULEd2jHbtWBbn9aN.tar.zst",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
 import rr.Draw
-import rr.Program as RayProgram
 
 import tc.Element exposing [box, text, View, style]
 import tc.Program
@@ -47,7 +47,11 @@ row = |index| {
 
 view : {} -> View(Msg)
 view = |_model| {
-	rows = (1..<20).map(row).collect()
+	var $rows = []
+	for index in 1..<20 {
+		$rows = $rows.append(row(index))
+	}
+	rows = $rows
 	box(
 		Id("page"),
 		|_| style
@@ -89,11 +93,11 @@ tc_program = Program.new!({
 	update,
 })
 
-ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
-ray_update = |Model.(state), step| {
+ray_update! : Model, App.Input(Msg) => Try(Model, [Exit(I64), ..])
+ray_update! = |Model.(state), input| {
 	tc_update = tc_program.update
-	next = tc_update(state, step.fields())?
-	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
+	next = tc_update(state, RocRayApp.step(input))?
+	Ok(Model.(next.model))
 }
 
 ray_render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
@@ -110,6 +114,6 @@ program = {
 			tc_init!(startup).map_ok(|state| Model.(state))
 		},
 	),
-	update: ray_update,
+	update!: ray_update!,
 	render!: ray_render!,
 }

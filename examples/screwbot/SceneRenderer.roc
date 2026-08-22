@@ -1,7 +1,6 @@
 ## Terracotta render-command adapter and shader pipeline for Screwbot.
 import rr.Assets
 import rr.Draw
-import rr.Text
 
 import tc.Color
 import tc.Element
@@ -70,8 +69,8 @@ SceneRenderer :: [].{
 	robot_texture : Assets.Texture -> Element.Texture
 	robot_texture = |texture| adapt_texture(robot_texture_key, texture)
 
-	font : Text.Metrics -> Element.Font
-	font = |metrics| adapt_font(metrics)
+	font : Draw.Font -> Element.Font
+	font = |font_value| adapt_font(font_value)
 
 	## Apply one retained scene snapshot while the draw capability is active.
 	write_scene_uniforms! : Resources, SceneParameters => {}
@@ -88,10 +87,10 @@ SceneRenderer :: [].{
 		resources.composite_resolution.set!({ x: SceneCamera.view_width, y: SceneCamera.view_height })
 	}
 
-	rendering : Resources, Text.Metrics -> Renderer
-	rendering = |resources, default_metrics| {
+	rendering : Resources, Draw.Font -> Renderer
+	rendering = |resources, default_font| {
 		measure_text = |config| match config.font {
-			DefaultFont => default_metrics.measure({ text: config.text, size: config.size, spacing: config.spacing })
+			DefaultFont => default_font.measure({ text: config.text, size: config.size, spacing: config.spacing })
 			CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
 		}
 		renderer = Render.adapter({
@@ -128,15 +127,15 @@ robot_texture_key = 5
 adapt_texture : U64, Assets.Texture -> Element.Texture
 adapt_texture = |key, texture_value| Element.keyed_texture({
 	key,
-	width: texture_value.width(),
-	height: texture_value.height(),
+	width: texture_value.width,
+	height: texture_value.height,
 	draw!: |_command| {},
 })
 
-adapt_font : Text.Metrics -> Element.Font
-adapt_font = |metrics| Element.custom_font({
+adapt_font : Draw.Font -> Element.Font
+adapt_font = |font_value| Element.custom_font({
 	key: 1,
-	measure: |config| metrics.measure({ text: config.text, size: config.size, spacing: config.spacing }),
+	measure: |config| font_value.measure({ text: config.text, size: config.size, spacing: config.spacing }),
 	draw!: |_config| {},
 })
 
@@ -189,7 +188,7 @@ draw_projective_texture! = |frame, texture_value, resources, corners, tint| matc
 			# Crop a coherent taped-cardboard island from the model's UV atlas.
 			{ x: 710, y: 300, width: 220, height: 145 }
 		} else {
-			texture_asset.rect()
+			{ x: 0, y: 0, width: texture_asset.width, height: texture_asset.height }
 		}
 		frame.projective_texture!({
 			texture: texture_asset,
@@ -265,7 +264,7 @@ draw_render_command! = |frame, resources, command| match command {
 			size: item.font_size,
 			spacing: item.spacing,
 			color: ray_color(item.color),
-			font: Draw.default_font,
+			font: resources.font,
 			align: Draw.align_top_left,
 		})
 		CustomFont(_) => frame.text!({
@@ -281,7 +280,7 @@ draw_render_command! = |frame, resources, command| match command {
 	Image(image) => {
 		texture_asset = resource_texture(resources, image.texture)
 		frame.texture!({
-			texture: texture_asset.view(),
+			texture: texture_asset,
 			source: Element.texture_rect(image.texture),
 			dest: { x: image.x, y: image.y, width: image.width, height: image.height },
 			origin: { x: 0, y: 0 },

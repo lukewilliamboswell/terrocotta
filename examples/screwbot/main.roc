@@ -5,16 +5,15 @@
 ## motor. Terracotta renders the projected geometry and exposes its live PGA
 ## coefficients as a small inspection console.
 app [Model, Msg, program] {
-	rr: platform "../../../roc-ray-elm/platform/main.roc",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc1/G7CQg3PE51ioJgNENceqkbQSjjX5ULEd2jHbtWBbn9aN.tar.zst",
 	tc: "../../package/main.roc",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
 import rr.Draw
-import rr.Program as RayProgram
 import rr.Physics
 import rr.Assets
-import rr.Text
 
 import tc.Color
 import tc.Element exposing [Font, View, box, canvas, style, text]
@@ -1290,22 +1289,21 @@ screwbot_manifest = {
 
 init! : Program.Config, App.Startup => Try({ model : AppModel, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, SceneRenderer.SceneParameters) }, [Exit(I64)])
 init! = |config, startup| {
-	default_font_metrics = Text.metrics!(Text.default_font)
-	store_config = match startup.read_env!("SCREWBOT_ASSET_ROOT") {
+	default_font = Draw.default_font!()
+	store_config = match App.read_env!(startup, "SCREWBOT_ASSET_ROOT") {
 		Ok(root) => Assets.absolute_directory(root)
 		Err(NotFound) => Assets.beside_executable("examples/assets")
 	}
 	store = Assets.Store.open!(Assets.with_manifest(store_config, screwbot_manifest)).map_err(|_| Exit(1))?
 	font_asset = Draw.font_from_bytes!({ format: Ttf, bytes: inter_font_bytes, size: 32 }).map_err(|_| Exit(1))?
-	crate_asset = store.texture!("polyhaven-cardboard-box-01-diffuse-1k.png").map_err(|_| Exit(1))?
-	floor_asset = store.texture!("polyhaven-hangar-floor-1k.png").map_err(|_| Exit(1))?
-	wall_asset = store.texture!("polyhaven-corrugated-iron-03-1k.png").map_err(|_| Exit(1))?
-	white_asset = Assets.Texture.from_bytes!({ format: Png, bytes: white_texture_bytes }).map_err(|_| Exit(1))?
-	font_metrics = Text.metrics!(font_asset)
-	font = SceneRenderer.font(font_metrics)
-	crate_asset.set_filter!(Bilinear)
-	floor_asset.set_filter!(Bilinear)
-	wall_asset.set_filter!(Bilinear)
+	crate_asset = Assets.load_texture!(store, "polyhaven-cardboard-box-01-diffuse-1k.png").map_err(|_| Exit(1))?
+	floor_asset = Assets.load_texture!(store, "polyhaven-hangar-floor-1k.png").map_err(|_| Exit(1))?
+	wall_asset = Assets.load_texture!(store, "polyhaven-corrugated-iron-03-1k.png").map_err(|_| Exit(1))?
+	white_asset = Assets.texture_from_bytes!({ format: Png, bytes: white_texture_bytes }).map_err(|_| Exit(1))?
+	font = SceneRenderer.font(font_asset)
+	Assets.set_texture_filter!(crate_asset, Bilinear)
+	Assets.set_texture_filter!(floor_asset, Bilinear)
+	Assets.set_texture_filter!(wall_asset, Bilinear)
 	crate_texture = SceneRenderer.crate_texture(crate_asset)
 	floor_texture = SceneRenderer.floor_texture(floor_asset)
 	wall_texture = SceneRenderer.wall_texture(wall_asset)
@@ -1384,7 +1382,7 @@ init! = |config, startup| {
 		camera: { yaw: 0.48, pitch: 0.34 },
 		orbit: OrbitIdle,
 	}
-	rendering = SceneRenderer.rendering(resources, default_font_metrics)
+	rendering = SceneRenderer.rendering(resources, default_font)
 	Ok({ model, measure_text: rendering.measure_text, renderer: rendering.renderer })
 }
 
@@ -1426,11 +1424,43 @@ init_for_ray! = App.init(
 	},
 )
 
-ray_update : Model, RayProgram.Step(Msg) -> Try(RayProgram.Next(Model, Msg), [Exit(I64), ..])
-ray_update = |Model.(state), step| {
+ray_update! : Model, App.Input(Msg) => Try(Model, [Exit(I64), ..])
+ray_update! = |Model.(state), input| {
 	tc_update = tc_program.update
-	next = tc_update(state, step.fields())?
-	Ok({ model: Model.(next.model), actions: next.actions, tasks: next.tasks })
+	fields = input.fields()
+	devices = fields.devices
+	mouse = devices.mouse
+	step = {
+		messages: fields.messages,
+		input: {
+			keys: devices.keys,
+			text_input: devices.text_input,
+			gamepads: devices.gamepads,
+			mouse: {
+				buttons: mouse.buttons,
+				left: mouse.left,
+				middle: mouse.middle,
+				right: mouse.right,
+				wheel: mouse.wheel,
+				wheel_x: mouse.wheel_x,
+				wheel_y: mouse.wheel_y,
+				delta_x: mouse.delta_x,
+				delta_y: mouse.delta_y,
+				x: mouse.x,
+				y: mouse.y,
+			},
+		},
+		window: { size: fields.window.size, focused: fields.window.focused, minimized: fields.window.minimized },
+		time: {
+			elapsed_seconds: fields.time.elapsed_seconds,
+			timestamp_nanos: fields.time.simulation_nanos,
+			cycle_count: fields.time.cycle_count,
+			monotonic_nanos: fields.time.monotonic_nanos,
+		},
+		capture: fields.capture,
+	}
+	next = tc_update(state, step)?
+	Ok(Model.(next.model))
 }
 
 render! : Model, Draw.Frame => Try({}, [Exit(I64), ..])
@@ -1441,6 +1471,6 @@ render! = |Model.(state), frame| {
 
 program = {
 	init!: init_for_ray!,
-	update: ray_update,
+	update!: ray_update!,
 	render!,
 }
