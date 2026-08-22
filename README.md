@@ -106,6 +106,7 @@ Find more examples at:
 - `roc examples/text_wrap.roc`
 - `roc examples/scrollable.roc`
 - `roc examples/floating.roc`
+- `roc examples/image.roc` — image loading and intrinsic sizing
 
 ## Testing
 

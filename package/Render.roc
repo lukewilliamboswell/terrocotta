@@ -171,7 +171,6 @@ Render := [].{
 	Command : RenderCommandRaw
 	BorderConfig : RenderBorderRaw
 	TextConfig : RenderTextRawConfig
-	ImageConfig : RenderImageRaw
 	Vector2 : RenderVector2
 	Rect : RenderRect
 	TextRaw : RenderTextRaw

@@ -713,8 +713,8 @@ add_image = |layout, id, cfg| {
 		content_size: measured,
 		scroll_offset: { x: 0, y: 0 },
 		position: { x: 0, y: 0 },
-		sizing_w: Fixed(measured.w),
-		sizing_h: Fixed(measured.h),
+		sizing_w: Grow({ min: 0, max: 10000 }),
+		sizing_h: Grow({ min: 0, max: 10000 }),
 		placement: Normal,
 	}
 	layout_with_id = register_node_id(layout, id, idx)?
@@ -2064,6 +2064,30 @@ expect {
 				Ok(Hit(node_id)) => node_id == root.id and node_id != image.id
 				_ => Bool.False
 			}
+		}
+		Err(_) => Bool.False
+	}
+}
+
+## Image nodes should fill the parent box's inner size.
+expect {
+	texture = Assets.new({ width: 1024, height: 1024, draw!: |_command| {} })
+	image_cfg = { texture, tint: Color.white }
+	root_cfg = Element.style
+		.width(Fixed(300))
+		.height(Fixed(300))
+	build = || {
+		var $tree = test_layout()
+		$tree = open_box($tree, Auto, root_cfg)?
+		$tree = add_image($tree, 200, image_cfg)?
+		$tree = close_box($tree)?
+		$tree.solve({ w: 300, h: 300 })
+	}
+
+	match build() {
+		Ok(tree) => {
+			image = tree.nodes.get(1)?
+			image.size.w == 300 and image.size.h == 300
 		}
 		Err(_) => Bool.False
 	}

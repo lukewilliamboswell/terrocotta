@@ -436,9 +436,13 @@ Element := [].{
 	style : BoxConfig
 	style = { layout: Element.default_layout, background: Color.transparent, shadow: NoShadow, radius: 0, border: { color: Color.transparent, left: 0, right: 0, top: 0, bottom: 0 }, text: Auto, overflow: { x: Hidden, y: Hidden }, floating: NoFloating }
 
-	## Create a single-element Iter containing a Text message.
+	## Create a text leaf element.
 	text : Str -> View(msg)
 	text = |content| [Text(content)].iter()
+
+	## Create an image leaf at its natural intrinsic size, tinted white.
+	image : Assets.Texture -> View(msg)
+	image = |texture_value| [Image({ texture: texture_value, tint: Color.white })].iter()
 
 	## Create a flex-sized vector canvas leaf.
 	canvas : CanvasConfig -> View(msg)

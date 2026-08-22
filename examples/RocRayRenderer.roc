@@ -1,12 +1,14 @@
 ## Basic Terracotta renderer for current roc-ray frame capabilities.
 ## Resource-heavy applications can supply their own adapter, as Screwbot does.
 import rr.Draw
+import rr.Assets as RayAssets
 
 import tc.Color
 import tc.Element
 import tc.Render
 
 RayFonts : { default : Draw.Font, custom : [NoRayFont, LoadedRayFont(Draw.Font)] }
+RayTexture : [NoRayTexture, LoadedRayTexture(RayAssets.Texture)]
 
 RocRayRenderer := [].{
 
@@ -17,7 +19,7 @@ RocRayRenderer := [].{
 	default! : {} => Bundle
 	default! = |{}| {
 		default_font = Draw.default_font!()
-		renderer_for({ default: default_font, custom: NoRayFont }, Element.default_font, default_font)
+		renderer_for({ default: default_font, custom: NoRayFont }, NoRayTexture, Element.default_font, default_font)
 	}
 
 	## Snapshot the default and loaded fonts once; both may occur in a view.
@@ -29,12 +31,21 @@ RocRayRenderer := [].{
 			measure: |config| font.measure({ text: config.text, size: config.size, spacing: config.spacing }),
 			draw!: |_config| {},
 		})
-		renderer_for({ default: default_font, custom: LoadedRayFont(font) }, custom_font, default_font)
+		renderer_for({ default: default_font, custom: LoadedRayFont(font) }, NoRayTexture, custom_font, default_font)
+	}
+
+	## Build an adapter for one application-owned texture.
+	with_texture! : RayAssets.Texture => { texture : Element.Texture, font : Element.Font, measure_text : Render.MeasureText, renderer : Render.Adapter(Draw.Frame, {}) }
+	with_texture! = |texture| {
+		default_font = Draw.default_font!()
+		element_texture = Element.keyed_texture({ key: 1, width: texture.width, height: texture.height, draw!: |_command| {} })
+		bundle = renderer_for({ default: default_font, custom: NoRayFont }, LoadedRayTexture(texture), Element.default_font, default_font)
+		{ texture: element_texture, font: bundle.font, measure_text: bundle.measure_text, renderer: bundle.renderer }
 	}
 }
 
-renderer_for : RayFonts, Element.Font, Draw.Font -> RocRayRenderer.Bundle
-renderer_for = |ray_fonts, font, default_font| {
+renderer_for : RayFonts, RayTexture, Element.Font, Draw.Font -> RocRayRenderer.Bundle
+renderer_for = |ray_fonts, ray_texture, font, default_font| {
 	measure_text = |config| match config.font {
 		DefaultFont => default_font.measure({ text: config.text, size: config.size, spacing: config.spacing })
 		CustomFont(resource) => Element.measure_font(resource, { text: config.text, size: config.size, spacing: config.spacing })
@@ -42,7 +53,7 @@ renderer_for = |ray_fonts, font, default_font| {
 	renderer = Render.adapter({
 		render!: |frame, _data, _render_frame, commands| {
 			frame.clear!(Draw.from_rgba({ r: 255, g: 255, b: 255, a: 255 }))
-			render_range!(frame, ray_fonts, commands, 0, commands.len())
+			render_range!(frame, ray_fonts, ray_texture, commands, 0, commands.len())
 			frame.fps!({ pos: { x: 0, y: 0 }, size: 16, color: ray_color(Color.gray) })
 		},
 	})
@@ -55,8 +66,8 @@ ray_color = |color| Draw.from_rgba({ r: color.r, g: color.g, b: color.b, a: colo
 draw_rect! : Draw.Frame, F32, F32, F32, F32, Color => {}
 draw_rect! = |frame, x, y, width, height, color| frame.rectangle!({ x, y, width, height, style: Draw.filled(ray_color(color)) })
 
-draw_command! : Draw.Frame, RayFonts, Render.Command => {}
-draw_command! = |frame, ray_fonts, command| match command {
+draw_command! : Draw.Frame, RayFonts, RayTexture, Render.Command => {}
+draw_command! = |frame, ray_fonts, ray_texture, command| match command {
 	Rectangle(rect) => draw_rect!(frame, rect.x, rect.y, rect.width, rect.height, rect.color)
 	RoundedRectangle(rect) => frame.rounded_rectangle!({
 		x: rect.x,
@@ -137,7 +148,17 @@ draw_command! = |frame, ray_fonts, command| match command {
 	}
 	# Typed textures and canvases need application-owned resource lookup. Apps
 	# using them should provide a resource-aware adapter.
-	Image(_) => {}
+	Image(item) => match ray_texture {
+		NoRayTexture => {}
+		LoadedRayTexture(texture) => frame.texture!({
+			texture,
+			source: Element.texture_rect(item.texture),
+			dest: { x: item.x, y: item.y, width: item.width, height: item.height },
+			origin: { x: 0, y: 0 },
+			rotation: 0,
+			tint: ray_color(item.tint),
+		})
+	}
 	Canvas(_) => {}
 	ScissorStart(_) | ScissorEnd => {}
 }
@@ -158,8 +179,8 @@ find_scissor_end = |commands, index, depth| {
 	}
 }
 
-render_range! : Draw.Frame, RayFonts, List(Render.Command), U64, U64 => {}
-render_range! = |frame, ray_fonts, commands, index, end| {
+render_range! : Draw.Frame, RayFonts, RayTexture, List(Render.Command), U64, U64 => {}
+render_range! = |frame, ray_fonts, ray_texture, commands, index, end| {
 	if index < end {
 		match commands.get(index) {
 			Err(_) => {}
@@ -170,13 +191,13 @@ render_range! = |frame, ray_fonts, commands, index, end| {
 					# Current Roc mis-specializes roc-ray's hosted scissor call when a
 					# Draw.Frame crosses this adapter boundary. Preserve nested command
 					# traversal until that compiler limitation is removed.
-					render_range!(frame, ray_fonts, commands, index + 1, close)
-					render_range!(frame, ray_fonts, commands, close + 1, end)
+					render_range!(frame, ray_fonts, ray_texture, commands, index + 1, close)
+					render_range!(frame, ray_fonts, ray_texture, commands, close + 1, end)
 				}
 				ScissorEnd => {}
 				_ => {
-					draw_command!(frame, ray_fonts, command)
-					render_range!(frame, ray_fonts, commands, index + 1, end)
+					draw_command!(frame, ray_fonts, ray_texture, command)
+					render_range!(frame, ray_fonts, ray_texture, commands, index + 1, end)
 				}
 			}
 		}
