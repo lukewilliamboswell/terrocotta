@@ -6,6 +6,8 @@ import Element
 import Event
 import Drag
 import Font exposing [Measurable]
+import rrt.Devices
+import rrt.Window
 import rrt.Keys
 import rrt.Mouse
 
@@ -72,14 +74,14 @@ Program :: [].{
 			})
 		}
 
-		update! : State(model, msg, font), { devices : { keys : List(U8), mouse : Mouse.Snapshot, ..devices }, window : { size : { width : I32, height : I32 }, ..window }, messages : List(msg), ..program_input } => Try(State(model, msg, font), [Exit(I64), ..])
+		update! : State(model, msg, font), { devices : Devices.Snapshot, window : Window.Snapshot, messages : List(msg), ..input } => Try(State(model, msg, font), [Exit(I64), ..])
 			where [font.Measurable]
-		update! = |state, program_input| {
-			input = program_input.devices
-			screen = { w: program_input.window.size.width.to_f32(), h: program_input.window.size.height.to_f32() }
+		update! = |state, input| {
+			{ mouse, keys, .. } = input.devices
+			screen = { w: input.window.size.width.to_f32(), h: input.window.size.height.to_f32() }
 
-			scroll = update_scroll_containers(state.layout, state.scroll, input.mouse.position(), input.mouse.wheel_delta()).map_err(|_| Exit(1))?
-			{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag).map_err(|_| Exit(1))?
+			scroll = update_scroll_containers(state.layout, state.scroll, mouse.position(), mouse.wheel_delta()).map_err(|_| Exit(1))?
+			{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, mouse, keys, state.hovered, state.focused, state.drag).map_err(|_| Exit(1))?
 
 			var $model = state.model
 			for message in program_input.messages {
@@ -94,7 +96,7 @@ Program :: [].{
 			for element_op in view($model) {
 				($layout, node) = $layout.update(
 					element_op,
-					|node_id| get_box_status(node_id, hovered, focused, input),
+					|node_id| get_box_status(node_id, hovered, focused, mouse),
 					|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
 				).map_err(|_| Exit(1))?
 				$event_bindings = match node {
@@ -212,46 +214,46 @@ deepest_scroll_target = |containers, hovered, axis| {
 default_box_status : Element.BoxStatus
 default_box_status = { hovered: Bool.False, pressed: Bool.False, focused: Bool.False, disabled: Bool.False }
 
-get_box_status : U64, List(U64), U64, { mouse : Mouse.Snapshot, ..input } -> Element.BoxStatus
-get_box_status = |node_index, prev_hovered, focused, input| {
+get_box_status : U64, List(U64), U64, Mouse.Snapshot -> Element.BoxStatus
+get_box_status = |node_index, prev_hovered, focused, mouse| {
 	hovered = prev_hovered.contains(node_index)
-	{ hovered, pressed: hovered and input.mouse.button_down(Left), focused: node_index == focused, disabled: Bool.False }
+	{ hovered, pressed: hovered and mouse.button_down(Left), focused: node_index == focused, disabled: Bool.False }
 }
 
-handle_events : Layout(draw), EventBindings(msg), { keys : List(U8), mouse : Mouse.Snapshot, ..input }, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
-handle_events = |layout, event_bindings, input, prev_hovered, prev_focused, drag_state| {
+handle_events : Layout(draw), EventBindings(msg), Mouse.Snapshot, List(U8), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events = |layout, event_bindings, mouse, keys, prev_hovered, prev_focused, drag_state| {
 	root_index = 0
-	pointer = input.mouse.position()
+	pointer = mouse.position()
 	hovered = layout.hover_path(pointer)?
 
 	# OnPointerEnter/OnPointerLeave/OnHover
 	var $msgs = get_pointer_enter_events(event_bindings, prev_hovered, hovered)
 	$msgs = $msgs.concat(get_pointer_leave_events(event_bindings, prev_hovered, hovered))
 	$msgs = $msgs.concat(get_hover_events(event_bindings, hovered))
-	$msgs = $msgs.concat(get_pointer_events(layout, event_bindings, hovered, input.mouse)?)
+	$msgs = $msgs.concat(get_pointer_events(layout, event_bindings, hovered, mouse)?)
 
 	# Targeted pointer button events. OnClick retains its current primary-button
 	# press behavior; the explicit phase handlers expose every mouse button.
-	if input.mouse.button_pressed(Left) and hovered.len() > 0 {
+	if mouse.button_pressed(Left) and hovered.len() > 0 {
 		node_index = hovered.get(0)?
 		$msgs = $msgs.concat(get_click_events(event_bindings, node_index))
 	}
 	if hovered.len() > 0 {
 		node_index = hovered.get(0)?
-		$msgs = $msgs.concat(get_pointer_button_events(event_bindings, node_index, input.mouse))
+		$msgs = $msgs.concat(get_pointer_button_events(event_bindings, node_index, mouse))
 	}
 
-	focused = if input.mouse.button_pressed(Left) {
+	focused = if mouse.button_pressed(Left) {
 		hovered.get(0).ok_or(root_index)
 	} else {
 		prev_focused
 	}
 
 	# Key events
-	$msgs = $msgs.concat(get_key_events(event_bindings, focused, input))
+	$msgs = $msgs.concat(get_key_events(event_bindings, focused, keys))
 
 	# Drag gestures
-	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, drag_state, input.mouse)?
+	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, drag_state, mouse)?
 	$msgs = $msgs.concat(drag_msgs)
 
 	Ok({ messages: $msgs, hovered, focused, drag })
@@ -403,8 +405,8 @@ get_click_events = |bindings, node_index| {
 		)
 }
 
-get_key_events : EventBindings(msg), U64, { keys : List(U8), ..input } -> List(msg)
-get_key_events = |bindings, focused, input| {
+get_key_events : EventBindings(msg), U64, List(U8) -> List(msg)
+get_key_events = |bindings, focused, keys| {
 	bindings
 		.get(focused)
 		.ok_or([])
@@ -413,17 +415,17 @@ get_key_events = |bindings, focused, input| {
 			[],
 			|msgs, binding| {
 				match binding {
-					OnKeyPressed(key, msg) => if Keys.key_pressed(input, key) {
+					OnKeyPressed(key, msg) => if Keys.key_pressed({ keys: keys }, key) {
 						msgs.append(msg)
 					} else {
 						msgs
 					}
-					OnKeyDown(key, msg) => if Keys.key_down(input, key) {
+					OnKeyDown(key, msg) => if Keys.key_down({ keys: keys }, key) {
 						msgs.append(msg)
 					} else {
 						msgs
 					}
-					OnKeyReleased(key, msg) => if Keys.key_released(input, key) {
+					OnKeyReleased(key, msg) => if Keys.key_released({ keys: keys }, key) {
 						msgs.append(msg)
 					} else {
 						msgs
@@ -504,7 +506,7 @@ expect {
 			OnKeyReleased(Raw(0), "released"),
 		],
 	)
-	get_key_events(bindings, 1, { keys: [7] }) == ["pressed", "down", "released"]
+	get_key_events(bindings, 1, [7]) == ["pressed", "down", "released"]
 }
 
 pointer_button_test_mouse : Mouse.Snapshot
