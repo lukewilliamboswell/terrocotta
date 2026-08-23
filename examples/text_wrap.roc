@@ -2,7 +2,7 @@
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-14-549b94e",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
@@ -116,15 +116,15 @@ view = |_model| {
 	)
 }
 
-init! : App.Init(Program.Start(AppModel, Draw.Font), _)
-init! = App.init(
-	App.static_config(App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True)),
-	|_startup| {
-		store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
-		ray_font = Draw.load_store_font!(store, { path: "Inter-Regular.ttf", size: 36 })?
-		font = Font.handle(0, ray_font)
-		Ok(Program.start({}, font))
-	},
-)
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True)
 
-program = Program.new(init!, update, view)
+init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, _)
+init! = |_startup| {
+	store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
+	ray_font = Draw.load_store_font!(store, { path: "Inter-Regular.ttf", size: 36 })?
+	font = Font.handle(0, ray_font)
+	Ok({ model: {}, font })
+}
+
+program = Program.new(configure, init!, update, view)

@@ -2,7 +2,7 @@
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-14-549b94e",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
@@ -42,7 +42,7 @@ view = |_model| {
 	for index in 1..<20 {
 		$rows = $rows.append(row(index))
 	}
-	#rows = (1..<20).iter().map(row).collect()
+	# rows = (1..<20).iter().map(row).collect()
 	box(
 		Id("page"),
 		|_| style
@@ -73,10 +73,10 @@ view = |_model| {
 	)
 }
 
-init! : App.Init(Program.Start({}, Draw.Font), [])
-init! = App.init(
-	App.static_config(App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 })),
-	|_startup| Ok(Program.start({}, Font.handle(0, Draw.default_font!()))),
-)
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 })
 
-program = Program.new(init!, update, view)
+init! : App.InitCallback({ model : {}, font : Font.Handle(Draw.Font) }, [])
+init! = |_startup| Ok({ model: {}, font: Font.handle(0, Draw.default_font!()) })
+
+program = Program.new(configure, init!, update, view)

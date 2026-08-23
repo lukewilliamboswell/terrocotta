@@ -1,6 +1,6 @@
 ## Pointer and UI event types used by Element views and Program dispatch.
-import rrt.Keys as RrtKeys
-import rrt.Mouse as RrtMouse
+import rrt.Keys
+import rrt.Mouse
 
 Event := [].{
 	Point : {
@@ -37,7 +37,7 @@ Event := [].{
 
 	PointerEvent : {
 		position : Point,
-		mouse : RrtMouse.State,
+		mouse : Mouse.Snapshot,
 		target : EventTarget,
 	}
 
@@ -55,14 +55,14 @@ Event := [].{
 		OnPointer(Box(PointerEvent -> List(msg))),
 		OnPointerEnter(msg),
 		OnPointerLeave(msg),
-		OnPointerPressed(RrtMouse.MouseButton, msg),
-		OnPointerDown(RrtMouse.MouseButton, msg),
-		OnPointerReleased(RrtMouse.MouseButton, msg),
+		OnPointerPressed(Mouse.Button, msg),
+		OnPointerDown(Mouse.Button, msg),
+		OnPointerReleased(Mouse.Button, msg),
 		OnDragStart(Box(DragEvent -> List(msg))),
 		OnDragMove(Box(DragEvent -> List(msg))),
 		OnDragEnd(Box(DragEvent -> List(msg))),
-		OnKeyPressed(RrtKeys.KeyboardKey, msg),
-		OnKeyDown(RrtKeys.KeyboardKey, msg),
-		OnKeyReleased(RrtKeys.KeyboardKey, msg),
+		OnKeyPressed(Keys.Key, msg),
+		OnKeyDown(Keys.Key, msg),
+		OnKeyReleased(Keys.Key, msg),
 	]
 }

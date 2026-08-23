@@ -6,8 +6,8 @@ import Element
 import Event
 import Drag
 import Font exposing [Measurable]
-import rrt.Keys as RrtKeys
-import rrt.Mouse as RrtMouse
+import rrt.Keys
+import rrt.Mouse
 
 EventBindings(msg) : Dict(U64, List(Event.Handler(msg)))
 
@@ -43,13 +43,6 @@ default_scroll_state = {
 }
 
 Program :: [].{
-	Start(model, font) := [
-		Start({
-			model : model,
-			font : Font.Handle(font),
-		}),
-	]
-
 	State(model, msg, font) : {
 		model : model,
 		layout : Layout(font),
@@ -61,37 +54,57 @@ Program :: [].{
 		screen : LayoutTypes.Size,
 	}
 
-	## Pair the application's initial model with the font used by layout and
-	## drawing. The platform-specific font is accepted through structural
-	## unification with Font.Handle.
-	start : model, Font.Handle(font) -> Start(model, font)
-	start = |model, font| Start.(Start({ model, font }))
-
-	## Adapt an application's init/update/view functions to RocRay's current
-	## { init!, update, render! } contract without importing the platform.
-	new = |app_init!, update_model, view| {
+	## Adapt an argv-aware configure function and an application's init/update/view functions to
+	## RocRay's current { init!, update!, render! } contract without importing
+	## the platform.
+	new = |configure, init!, update, view| {
 		run! = |startup| {
-			started = (app_init!.run!)(startup)?
-			match started {
-				Start(fields) => Ok(Program.init(fields.model, fields.font))
-			}
+			fields = init!(startup)?
+			Ok({
+				model: fields.model,
+				layout: Layout.new(fields.font),
+				event_bindings: Dict.empty(),
+				hovered: [],
+				focused: 0,
+				scroll: Dict.empty(),
+				drag: Idle,
+				screen: { w: 0, h: 0 },
+			})
 		}
 
-		update = |state, ray_step| {
-			step_fields = ray_step.fields()
-			result = Program.step({
-				state,
-				input: step_fields.input,
-				viewport: step_fields.window.size,
-				messages: step_fields.messages,
-				view,
-				update: update_model,
-			})
+		update! : State(model, msg, font), { devices : { keys : List(U8), mouse : Mouse.Snapshot, ..devices }, window : { size : { width : I32, height : I32 }, ..window }, messages : List(msg), ..program_input } => Try(State(model, msg, font), [Exit(I64), ..])
+			where [font.Measurable]
+		update! = |state, program_input| {
+			input = program_input.devices
+			screen = { w: program_input.window.size.width.to_f32(), h: program_input.window.size.height.to_f32() }
 
-			match result {
-				Ok(next_state) => ray_step.static(next_state)
-				Err(_) => ray_step.static(state).with_action(Exit(1))
+			scroll = update_scroll_containers(state.layout, state.scroll, input.mouse.position(), input.mouse.wheel_delta()).map_err(|_| Exit(1))?
+			{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag).map_err(|_| Exit(1))?
+
+			var $model = state.model
+			for message in program_input.messages {
+				$model = update($model, message)
 			}
+			for message in event_messages {
+				$model = update($model, message)
+			}
+
+			var $layout = state.layout.clear()
+			var $event_bindings = Dict.empty()
+			for element_op in view($model) {
+				($layout, node) = $layout.update(
+					element_op,
+					|node_id| get_box_status(node_id, hovered, focused, input),
+					|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
+				).map_err(|_| Exit(1))?
+				$event_bindings = match node {
+					Node(node_id, Events(events)) => $event_bindings.insert(node_id, events)
+					_ => $event_bindings
+				}
+			}
+
+			$layout = $layout.solve(screen).map_err(|_| Exit(1))?
+			Ok({ model: $model, layout: $layout, event_bindings: $event_bindings, hovered, focused, scroll, drag, screen })
 		}
 
 		render! = |state, frame| {
@@ -100,68 +113,12 @@ Program :: [].{
 		}
 
 		{
-			init!: { config: app_init!.config, run! },
-			update,
+			init!: { config: configure, run! },
+			update!,
 			render!,
 		}
 	}
 
-	## Initialize package state. The first RocRay update builds the first layout.
-	init : model, Font.Handle(font) -> State(model, msg, font)
-	init = |model, font| {
-		{
-			model,
-			layout: Layout.new(font),
-			event_bindings: Dict.empty(),
-			hovered: [],
-			focused: 0,
-			scroll: Dict.empty(),
-			drag: Idle,
-			screen: { w: 0, h: 0 },
-		}
-	}
-
-	## Advance interaction and solve the layout that render will draw.
-	step : {
-		state : State(model, msg, font),
-		input : { keys : List(U8), mouse : RrtMouse.State, ..input_state },
-		viewport : { width : I32, height : I32 },
-		messages : List(msg),
-		view : model -> Element.View(msg, font),
-		update : model, msg -> model,
-	} -> Try(State(model, msg, font), Layout.LayoutError)
-		where [font.Measurable]
-	step = |{ state, input, viewport, messages: task_messages, view, update }| {
-		screen = { w: viewport.width.to_f32(), h: viewport.height.to_f32() }
-
-		scroll = update_scroll_containers(state.layout, state.scroll, input.mouse.position(), input.mouse.wheel_delta())?
-		{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input, state.hovered, state.focused, state.drag)?
-
-		var $model = state.model
-		for message in task_messages {
-			$model = update($model, message)
-		}
-		for message in event_messages {
-			$model = update($model, message)
-		}
-
-		var $layout = state.layout.clear()
-		var $event_bindings = Dict.empty()
-		for element_op in view($model) {
-			($layout, node) = $layout.update(
-				element_op,
-				|node_id| get_box_status(node_id, hovered, focused, input),
-				|node_id| scroll.get(node_id).map_ok(|item| item.position).ok_or({ x: 0, y: 0 }),
-			)?
-			$event_bindings = match node {
-				Node(node_id, Events(events)) => $event_bindings.insert(node_id, events)
-				_ => $event_bindings
-			}
-		}
-
-		$layout = $layout.solve(screen)?
-		Ok({ model: $model, layout: $layout, event_bindings: $event_bindings, hovered, focused, scroll, drag, screen })
-	}
 }
 
 ## Return whether an overflow mode permits user scrolling.
@@ -255,13 +212,13 @@ deepest_scroll_target = |containers, hovered, axis| {
 default_box_status : Element.BoxStatus
 default_box_status = { hovered: Bool.False, pressed: Bool.False, focused: Bool.False, disabled: Bool.False }
 
-get_box_status : U64, List(U64), U64, { mouse : RrtMouse.State, ..input } -> Element.BoxStatus
+get_box_status : U64, List(U64), U64, { mouse : Mouse.Snapshot, ..input } -> Element.BoxStatus
 get_box_status = |node_index, prev_hovered, focused, input| {
 	hovered = prev_hovered.contains(node_index)
 	{ hovered, pressed: hovered and input.mouse.button_down(Left), focused: node_index == focused, disabled: Bool.False }
 }
 
-handle_events : Layout(draw), EventBindings(msg), { keys : List(U8), mouse : RrtMouse.State, ..input }, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events : Layout(draw), EventBindings(msg), { keys : List(U8), mouse : Mouse.Snapshot, ..input }, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
 handle_events = |layout, event_bindings, input, prev_hovered, prev_focused, drag_state| {
 	root_index = 0
 	pointer = input.mouse.position()
@@ -300,7 +257,7 @@ handle_events = |layout, event_bindings, input, prev_hovered, prev_focused, drag
 	Ok({ messages: $msgs, hovered, focused, drag })
 }
 
-pointer_event : Layout(draw), U64, RrtMouse.State -> Try(Event.PointerEvent, Layout.LayoutError)
+pointer_event : Layout(draw), U64, Mouse.Snapshot -> Try(Event.PointerEvent, Layout.LayoutError)
 pointer_event = |layout, node_id, mouse| {
 	Ok({
 		position: mouse.position(),
@@ -386,7 +343,7 @@ get_hover_events = |bindings, hovered| {
 		)
 }
 
-get_pointer_events : Layout(draw), EventBindings(msg), List(U64), RrtMouse.State -> Try(List(msg), Layout.LayoutError)
+get_pointer_events : Layout(draw), EventBindings(msg), List(U64), Mouse.Snapshot -> Try(List(msg), Layout.LayoutError)
 get_pointer_events = |layout, bindings, hovered, mouse| {
 	var $msgs = []
 	for node_index in hovered {
@@ -410,7 +367,7 @@ get_pointer_events = |layout, bindings, hovered, mouse| {
 	Ok($msgs)
 }
 
-get_pointer_button_events : EventBindings(msg), U64, RrtMouse.State -> List(msg)
+get_pointer_button_events : EventBindings(msg), U64, Mouse.Snapshot -> List(msg)
 get_pointer_button_events = |bindings, node_index, mouse| {
 	bindings
 		.get(node_index)
@@ -456,17 +413,17 @@ get_key_events = |bindings, focused, input| {
 			[],
 			|msgs, binding| {
 				match binding {
-					OnKeyPressed(key, msg) => if RrtKeys.key_pressed(input, key) {
+					OnKeyPressed(key, msg) => if Keys.key_pressed(input, key) {
 						msgs.append(msg)
 					} else {
 						msgs
 					}
-					OnKeyDown(key, msg) => if RrtKeys.key_down(input, key) {
+					OnKeyDown(key, msg) => if Keys.key_down(input, key) {
 						msgs.append(msg)
 					} else {
 						msgs
 					}
-					OnKeyReleased(key, msg) => if RrtKeys.key_released(input, key) {
+					OnKeyReleased(key, msg) => if Keys.key_released(input, key) {
 						msgs.append(msg)
 					} else {
 						msgs
@@ -550,7 +507,7 @@ expect {
 	get_key_events(bindings, 1, { keys: [7] }) == ["pressed", "down", "released"]
 }
 
-pointer_button_test_mouse : RrtMouse.State
+pointer_button_test_mouse : Mouse.Snapshot
 pointer_button_test_mouse = {
 	buttons: [3, 4],
 	left: Bool.True,

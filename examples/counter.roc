@@ -2,12 +2,12 @@
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-14-549b94e",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
 import rr.Draw
-#import rr.Keys
+# import rr.Keys
 
 import tc.Element exposing [box, text, View, style]
 import tc.Font
@@ -27,6 +27,12 @@ Msg : [
 	Decrement,
 	Increment,
 ]
+
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Counter Example").with_size({ width: 640, height: 420 })
+
+init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, [])
+init! = |_startup| Ok({ model: { count: 0 }, font: Font.handle(0, Draw.default_font!()) })
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| match msg {
@@ -62,13 +68,4 @@ view = |model| {
 	)
 }
 
-init! : App.Init(Program.Start(AppModel, Draw.Font), [])
-init! = App.init(
-	App.static_config(App.default.with_title("Counter Example").with_size({ width: 640, height: 420 })),
-	|_startup| {
-		font = Font.handle(0, Draw.default_font!())
-		Ok(Program.start({ count: 0 }, font))
-	},
-)
-
-program = Program.new(init!, update, view)
+program = Program.new(configure, init!, update, view)

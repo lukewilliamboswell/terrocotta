@@ -2,7 +2,7 @@
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-14-549b94e",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
@@ -128,19 +128,19 @@ update = |model, msg| {
 	}
 }
 
-init! : App.Init(Program.Start(AppModel, Draw.Font), [])
-init! = App.init(
-	App.static_config(App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })),
-	|_startup| {
-		model = {
-			theme: Theme.dark,
-			slider_value: 45,
-			select_open: False,
-			select_selected: 0,
-			toggle_on: False,
-		}
-		Ok(Program.start(model, Font.handle(0, Draw.default_font!())))
-	},
-)
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })
 
-program = Program.new(init!, update, view)
+init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, [])
+init! = |_startup| {
+	model = {
+		theme: Theme.dark,
+		slider_value: 45,
+		select_open: False,
+		select_selected: 0,
+		toggle_on: False,
+	}
+	Ok({ model, font: Font.handle(0, Draw.default_font!()) })
+}
+
+program = Program.new(configure, init!, update, view)

@@ -3,7 +3,7 @@ app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-14-549b94e",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
@@ -48,24 +48,23 @@ Msg : [
 	SelectHeight(U64),
 ]
 
-init! : App.Init(Program.Start(AppModel, Draw.Font), _)
-init! = App.init(
-	App.static_config(App.default.with_title("Image Example").with_size({ width: 700, height: 500 })),
-	|_startup| {
-		store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
-		texture = Assets.load_texture!(store, "rocotta.png")?
-		Ok(
-			Program.start(
-				{
-					texture,
-					select_width: { open: False, selected: 2 },
-					select_height: { open: False, selected: 2 },
-				},
-				Font.handle(0, Draw.default_font!()),
-			),
-		)
-	},
-)
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Image Example").with_size({ width: 700, height: 500 })
+
+init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, _)
+init! = |_startup| {
+	store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
+	texture = Assets.load_texture!(store, "rocotta.png")?
+	font = Font.handle(0, Draw.default_font!())
+	Ok({
+		model: {
+			texture,
+			select_width: { open: False, selected: 2 },
+			select_height: { open: False, selected: 2 },
+		},
+		font,
+	})
+}
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| match msg {
@@ -152,4 +151,4 @@ view = |model| {
 	)
 }
 
-program = Program.new(init!, update, view)
+program = Program.new(configure, init!, update, view)

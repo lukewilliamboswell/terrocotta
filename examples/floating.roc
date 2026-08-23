@@ -2,7 +2,7 @@
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-14-549b94e",
+	roc: "nightly-2026-08-21-90da19f",
 }
 
 import rr.App
@@ -26,7 +26,6 @@ update : AppModel, Msg -> AppModel
 update = |model, msg| {
 	{ ..model, attach: msg }
 }
-
 
 view : AppModel -> View(Msg, Draw.Font)
 view = |model| {
@@ -79,7 +78,7 @@ view = |model| {
 				# .width(Grow({min: 0, max: 10000}))
 				# .height(Grow({min: 0, max: 10000}))
 					.font_size(theme.font_size)
-					.border({ color: theme.palette.primary.base.fill, top: 2, left: 2, right: 2, bottom: 2})
+					.border({ color: theme.palette.primary.base.fill, top: 2, left: 2, right: 2, bottom: 2 })
 					.radius(theme.radius),
 				[],
 				[
@@ -112,10 +111,10 @@ view = |model| {
 	)
 }
 
-init! : App.Init(Program.Start(AppModel, Draw.Font), [])
-init! = App.init(
-	App.static_config(App.default.with_title("Floating Root").with_size({ width: 720, height: 520 })),
-	|_startup| Ok(Program.start({ attach: Center }, Font.handle(0, Draw.default_font!()))),
-)
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Floating Root").with_size({ width: 720, height: 520 })
 
-program = Program.new(init!, update, view)
+init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, [])
+init! = |_startup| Ok({ model: { attach: Center }, font: Font.handle(0, Draw.default_font!()) })
+
+program = Program.new(configure, init!, update, view)
