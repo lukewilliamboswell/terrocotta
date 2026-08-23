@@ -5,7 +5,7 @@
 ## motor. Terracotta renders the projected geometry and exposes its live PGA
 ## coefficients as a small inspection console.
 app [Model, Msg, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc1/G7CQg3PE51ioJgNENceqkbQSjjX5ULEd2jHbtWBbn9aN.tar.zst",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc2/CaTEYs2hRbxfDqcG6deiU9kmGXaR5T1tEgf4ASxHt1S1.tar.zst",
 	tc: "../../package/main.roc",
 	roc: "nightly-2026-08-21-90da19f",
 }
