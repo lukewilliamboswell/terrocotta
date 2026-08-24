@@ -80,8 +80,8 @@ view = |model| {
 				{
 					id: Id("floating-container"),
 					style: |_| style
-					# .width(Grow({min: 0, max: 10000}))
-					# .height(Grow({min: 0, max: 10000}))
+					# .width(Grow({}))
+					# .height(Grow({}))
 						.font_size(theme.font_size)
 						.border({ color: theme.palette.primary.base.fill, top: 2, left: 2, right: 2, bottom: 2 })
 						.radius(theme.radius),
@@ -91,8 +91,8 @@ view = |model| {
 						{
 							id: Id("floating-card"),
 							style: |_| style
-								.width(Fit({ min: 0, max: 10000 }))
-								.height(Fit({ min: 0, max: 10000 }))
+								.width(Fit({}))
+								.height(Fit({}))
 								.pad((theme.gap, theme.gap, theme.gap, theme.gap))
 								.background(theme.palette.primary.base.fill)
 								.font_color(theme.palette.primary.base.content)

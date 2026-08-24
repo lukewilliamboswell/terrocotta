@@ -47,7 +47,7 @@ label = |content| {
 	box(
 		{
 			style: |_| style
-				.height(Fit({ min: 0, max: 10000 }))
+				.height(Fit({}))
 				.child_align({ x: Start, y: Start })
 				.font_color(theme.palette.primary.strong.fill)
 				.font_size(theme.font_size)
@@ -62,7 +62,7 @@ paragraph = |wrap_mode, content| {
 	box(
 		{
 			style: |_| style
-				.height(Fit({ min: 0, max: 10000 }))
+				.height(Fit({}))
 				.child_align({ x: Start, y: Start })
 				.font_color(theme.palette.background.base.content)
 				.font_size(theme.font_size)
@@ -77,7 +77,7 @@ panel = |title, wrap_mode, content| {
 	box(
 		{
 			style: |_| style
-				.height(Fit({ min: 0, max: 10000 }))
+				.height(Fit({}))
 				.direction(Col)
 				.gap(theme.gap)
 				.pad((theme.gap, theme.gap, theme.gap, theme.gap))

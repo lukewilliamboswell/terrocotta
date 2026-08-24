@@ -29,7 +29,7 @@ row = |index| {
 		{
 			id: IdI("scroll-row", index),
 			style: |_| style
-				.height(Fit({ min: 0, max: 10000 }))
+				.height(Fit({}))
 				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
 				.child_align({ x: Start, y: Center })
 				.background(theme.palette.background.weak.fill),

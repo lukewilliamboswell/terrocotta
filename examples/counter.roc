@@ -50,7 +50,7 @@ view = |model| {
 			box(
 				{
 					style: |_| style
-						.height(Fit({ min: 0, max: 10000 }))
+						.height(Fit({}))
 						.gap(theme.gap)
 						.direction(Row),
 				},

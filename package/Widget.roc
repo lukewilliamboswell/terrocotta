@@ -30,8 +30,8 @@ Widget := [].{
 			{
 				id: config.id,
 				style: |_| style
-					.width(Grow({ min: 0, max: 10000 }))
-					.height(Grow({ min: 0, max: 10000 }))
+					.width(Grow({}))
+					.height(Grow({}))
 					.background(config.scrim)
 					.floating(Floating({ target: Root, config: { ..Element.default_floating_config, z_index: config.z_index, capture: Capture } }))
 					.child_align({ x: Center, y: Center }),
@@ -43,7 +43,7 @@ Widget := [].{
 						id: LocalId("dialog"),
 						style: |_| style
 							.width(Fit({ min: 0, max: 600 }))
-							.height(Fit({ min: 0, max: 10000 }))
+							.height(Fit({}))
 							.background(dialog_colors.fill)
 							.font_family(theme.font)
 							.font_size(theme.font_size)
@@ -63,8 +63,8 @@ Widget := [].{
 		box(
 			{
 				style: |_| text_style(theme, theme.font_size, theme.palette.background.base)
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 })),
+					.width(Fit({}))
+					.height(Fit({})),
 			},
 			[
 				text(content),
@@ -78,8 +78,8 @@ Widget := [].{
 		box(
 			{
 				style: |_| text_style(theme, theme.font_size * 1.5, theme.palette.primary.strong)
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 })),
+					.width(Fit({}))
+					.height(Fit({})),
 			},
 			[
 				text(content),
@@ -93,8 +93,8 @@ Widget := [].{
 		box(
 			{
 				style: |_| style
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
+					.width(Fit({}))
+					.height(Fit({}))
 					.direction(Row)
 					.gap(theme.gap)
 					.child_align({ x: Start, y: Start }),
@@ -109,8 +109,8 @@ Widget := [].{
 		box(
 			{
 				style: |_| style
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
+					.width(Fit({}))
+					.height(Fit({}))
 					.direction(Col)
 					.gap(theme.gap)
 					.child_align({ x: Start, y: Start }),
@@ -127,8 +127,8 @@ Widget := [].{
 		box(
 			{
 				style: |_| style
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
+					.width(Fit({}))
+					.height(Fit({}))
 					.background(colors.fill)
 					.font_family(theme.font)
 					.font_size(theme.font_size)
@@ -152,8 +152,8 @@ Widget := [].{
 			{
 				style: |status| {
 					var $box_style = style
-						.width(Fit({ min: 0, max: 10000 }))
-						.height(Fit({ min: 0, max: 10000 }))
+						.width(Fit({}))
+						.height(Fit({}))
 						.background(colors.fill)
 						.font_family(theme.font)
 						.font_size(theme.font_size)
@@ -203,8 +203,8 @@ Widget := [].{
 			{
 				style: |status| {
 					var $box_style = style
-						.width(Fit({ min: 0, max: 10000 }))
-						.height(Fit({ min: 0, max: 10000 }))
+						.width(Fit({}))
+						.height(Fit({}))
 						.font_family(theme.font)
 						.font_size(theme.font_size)
 						.font_color(theme.palette.background.base.content)
@@ -341,8 +341,8 @@ Widget := [].{
 		box(
 			{
 				style: |_| style
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
+					.width(Fit({}))
+					.height(Fit({}))
 					.background(colors.fill)
 					.font_family(theme.font)
 					.font_size(theme.font_size * 0.85)
@@ -409,7 +409,7 @@ Widget := [].{
 
 							style
 								.width(Percent(progress))
-								.height(Grow({ min: 0, max: 10000 }))
+								.height(Grow({}))
 								.background(fill_color)
 								.radius(theme.radius)
 						},
@@ -478,8 +478,8 @@ Widget := [].{
 		spacer = box(
 			{
 				style: |_| style
-					.width(Grow({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 })),
+					.width(Grow({}))
+					.height(Fit({})),
 			},
 			[],
 		)
@@ -491,7 +491,7 @@ Widget := [].{
 
 					var $box_style = style
 						.width(Grow({ min: theme.font_size * 6, max: 10000 }))
-						.height(Fit({ min: 0, max: 10000 }))
+						.height(Fit({}))
 						.background(trigger_colors.fill)
 						.font_family(theme.font)
 						.font_size(theme.font_size)
@@ -772,8 +772,8 @@ select_panel = |theme, select_options| {
 	box(
 		{
 			style: |_| style
-				.width(Grow({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 }))
+				.width(Grow({}))
+				.height(Fit({}))
 				.background(theme.palette.background.base.fill)
 				.font_family(theme.font)
 				.font_size(theme.font_size)
@@ -807,8 +807,8 @@ select_scrim = |on_toggle_open| {
 	box(
 		{
 			style: |_| style
-				.width(Grow({ min: 0, max: 10000 }))
-				.height(Grow({ min: 0, max: 10000 }))
+				.width(Grow({}))
+				.height(Grow({}))
 				.floating(
 					Floating({
 						target: Root,
@@ -843,8 +843,8 @@ select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 		{
 			style: |status| {
 				var $box_style = style
-					.width(Grow({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
+					.width(Grow({}))
+					.height(Fit({}))
 					.font_family(theme.font)
 					.font_size(theme.font_size)
 					.font_color(content_color)

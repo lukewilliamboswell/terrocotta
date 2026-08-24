@@ -30,8 +30,8 @@ index_to_sizing = |index| match index {
 	1 => Fixed(200)
 	2 => Fixed(300)
 	3 => Fixed(400)
-	4 => Fit({ min: 0, max: 10000 })
-	5 => Grow({ min: 0, max: 10000 })
+	4 => Fit({})
+	5 => Grow({})
 	_ => Fixed(300)
 }
 
@@ -88,7 +88,7 @@ view = |model| {
 			box(
 				{
 					style: |_| style
-						.height(Fit({ min: 0, max: 10000 }))
+						.height(Fit({}))
 						.direction(Row)
 						.gap(theme.gap)
 						.child_align({ x: Start, y: Center }),

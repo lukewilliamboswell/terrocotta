@@ -13,9 +13,9 @@ Element := [].{
 
 	Sizing : [
 		# Size to content, clamped to min/max pixels.
-		Fit({ min : F32, max : F32 }),
+		Fit({ min : F32 ?? 0, max : F32 ?? 10000 }),
 		# Fill available space, clamped to min/max pixels.
-		Grow({ min : F32, max : F32 }),
+		Grow({ min : F32 ?? 0, max : F32 ?? 10000 }),
 		# Use an exact size in pixels.
 		Fixed(F32),
 		# Use a fraction of the parent's available size.
@@ -306,8 +306,8 @@ Element := [].{
 
 	default_layout : LayoutConfig
 	default_layout = {
-		width: Grow({ min: 0, max: 10000 }),
-		height: Grow({ min: 0, max: 10000 }),
+		width: Grow({}),
+		height: Grow({}),
 		pad: { left: 0, right: 0, top: 0, bottom: 0 },
 		gap: 0,
 		child_align: { x: Center, y: Center },

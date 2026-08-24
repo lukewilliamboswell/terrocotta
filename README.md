@@ -67,7 +67,7 @@ button = |label, msg| {
 		{
 			id: Auto,
 			style: |status| style
-				.width(Fit({ min: 0, max: 10000 }))
+				.width(Fit({}))
 				.pad((8, 8, 8, 8))
 				.background(if status.hovered { blue.darken(50) } else { blue })
 				.font_color(white)
@@ -83,7 +83,7 @@ button = |label, msg| {
 view : AppModel -> View(Msg)
 view = |model| {
 	box(
-		{ style: |_| style.direction(Row).height(Fit({ min: 0, max: 10000 })).gap(8).font_size(16) },
+		{ style: |_| style.direction(Row).height(Fit({})).gap(8).font_size(16) },
 		[
 			button("-", Decrement),
 			text("Count: ${model.count.to_str()}"),

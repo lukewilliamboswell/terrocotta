@@ -726,8 +726,8 @@ add_image = |layout, id, texture| {
 		content_size: measured,
 		scroll_offset: { x: 0, y: 0 },
 		position: { x: 0, y: 0 },
-		sizing_w: Grow({ min: 0, max: 10000 }),
-		sizing_h: Grow({ min: 0, max: 10000 }),
+		sizing_w: Grow({}),
+		sizing_h: Grow({}),
 		placement: Normal,
 	}
 	layout_with_id = register_node_id(layout, id, idx)?
@@ -1212,7 +1212,7 @@ test_text_cfg : Element.TextWrap -> Element.BoxConfig
 test_text_cfg = |wrap| {
 	Element.style
 		.width(Fixed(4))
-		.height(Fit({ min: 0, max: 10000 }))
+		.height(Fit({}))
 		.direction(Col)
 		.child_align({ x: Start, y: Start })
 		.font_size(10)
@@ -1224,8 +1224,8 @@ test_text_cfg = |wrap| {
 test_button_cfg : Element.BoxConfig
 test_button_cfg = {
 	Element.style
-		.width(Fit({ min: 0, max: 10000 }))
-		.height(Fit({ min: 0, max: 10000 }))
+		.width(Fit({}))
+		.height(Fit({}))
 		.pad((18, 18, 18, 18))
 		.child_align({ x: Center, y: Center })
 		.direction(Row)
@@ -1236,7 +1236,7 @@ test_align_text_cfg : Element.TextAlign -> Element.BoxConfig
 test_align_text_cfg = |align| {
 	Element.style
 		.width(Fixed(10))
-		.height(Fit({ min: 0, max: 10000 }))
+		.height(Fit({}))
 		.direction(Col)
 		.child_align({ x: Start, y: Start })
 		.font_size(10)
@@ -1380,7 +1380,7 @@ build_nested_fit_text_layout : Element.BoxConfig, Str, F32, List(Text.Word), Siz
 build_nested_fit_text_layout = |root_cfg, content, preferred_w, words, screen| {
 	var $layout = test_layout()
 	$layout = open_box($layout, Auto, root_cfg)?
-	$layout = open_box($layout, Auto, Element.style.width(Fit({ min: 0, max: 10000 })).height(Fit({ min: 0, max: 10000 })).direction(Col).child_align({ x: Start, y: Start }))?
+	$layout = open_box($layout, Auto, Element.style.width(Fit({})).height(Fit({})).direction(Col).child_align({ x: Start, y: Start }))?
 	$layout = add_test_text($layout, content, preferred_w, words)?
 	$layout = close_box($layout)?
 	$layout = close_box($layout)?
