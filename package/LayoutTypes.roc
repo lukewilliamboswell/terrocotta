@@ -3,6 +3,7 @@ import Color
 import Element
 import Identity exposing [NodeId]
 import Text
+import rrt.Font
 import rrt.Texture
 
 LayoutTypes := [].{
@@ -99,7 +100,7 @@ LayoutTypes := [].{
 
 	TextNodeData : {
 		content_index : U64,
-		font : U64,
+		font : Font,
 		config : Text.Config,
 		line_height : F32,
 		wrap_width : F32,

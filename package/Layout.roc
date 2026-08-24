@@ -30,7 +30,7 @@ import rrt.Texture
 
 # --- Public API ---
 ResolvedText := {
-	font : U64,
+	font : Font,
 	config : Text.Config,
 }
 
@@ -39,7 +39,6 @@ Layout :: {
 	text_contents : List(Str),
 	text_lines : List(Text.Line),
 	text_cache : TextMeasureCache,
-	fonts : List(Font),
 	root_text : ResolvedText,
 	child_indices : List(U64),
 	pending_children : List(U64),
@@ -47,7 +46,7 @@ Layout :: {
 	root_indices : List(U64),
 	stack : Stack(LayoutFrame),
 }.{
-	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle, FontNotFound(U64)]
+	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle]
 	TextSize : Render.TextSize
 	NodeId : U64
 
@@ -56,7 +55,7 @@ Layout :: {
 	new = |default_font| {
 		root_text : ResolvedText
 		root_text = {
-			font: 0,
+			font: default_font,
 			config: {
 				font_size: Element.default_text.font_size,
 				spacing: Element.default_text.spacing,
@@ -71,7 +70,6 @@ Layout :: {
 			text_contents: [],
 			text_lines: [],
 			text_cache: TextMeasureCache.new(),
-			fonts: [default_font],
 			root_text,
 			child_indices: [],
 			pending_children: [],
@@ -357,50 +355,27 @@ close_box_node_id = |layout| {
 	}
 }
 
-resolve_box_text : Layout, Element.TextStyle -> (Layout, ResolvedText)
+resolve_box_text : Layout, Element.TextStyle -> ResolvedText
 resolve_box_text = |layout, style| {
 	parent_text_cfg = layout.stack.top().map_ok(|frame| frame.text).ok_or(layout.root_text)
 	match style {
-		Auto => (layout, parent_text_cfg)
+		Auto => parent_text_cfg
 		Font(text_cfg) => {
-			(layout_with_font, font_index) = match text_cfg.font {
-				InheritFont => (layout, parent_text_cfg.font)
-				FontHandle(font) => intern_font(layout, font)
+			font = match text_cfg.font {
+				InheritFont => parent_text_cfg.font
+				FontHandle(value) => value
 			}
-			(
-				layout_with_font,
-				{
-					font: font_index,
-					config: {
-						font_size: text_cfg.font_size,
-						spacing: text_cfg.spacing,
-						color: text_cfg.color,
-						line_height: text_cfg.line_height,
-						align: text_cfg.align,
-						wrap: text_cfg.wrap,
-					},
+			{
+				font,
+				config: {
+					font_size: text_cfg.font_size,
+					spacing: text_cfg.spacing,
+					color: text_cfg.color,
+					line_height: text_cfg.line_height,
+					align: text_cfg.align,
+					wrap: text_cfg.wrap,
 				},
-			)
-		}
-	}
-}
-
-## Intern a font for stable cache and node indexes. The list only grows.
-intern_font : Layout, Font -> (Layout, U64)
-intern_font = |layout, font| {
-	match find_font(layout.fonts, font, 0) {
-		Found(index) => (layout, index)
-		Missing => ({ ..layout, fonts: layout.fonts.append(font) }, layout.fonts.len())
-	}
-}
-
-find_font : List(Font), Font, U64 -> [Found(U64), Missing]
-find_font = |fonts, font, index| {
-	match fonts.get(index) {
-		Err(_) => Missing
-		Ok(candidate) => {
-			equal = candidate.metrics == font.metrics
-			if equal Found(index) else find_font(fonts, font, index + 1)
+			}
 		}
 	}
 }
@@ -452,7 +427,7 @@ open_box_with_scroll = |layout, id, cfg, retained_offset| {
 		parent_node_id(layout, parent)?,
 		parent_child_offset(layout, parent)?,
 	)
-	(layout_with_font, resolved_text) = resolve_box_text(layout, cfg.text)
+	resolved_text = resolve_box_text(layout, cfg.text)
 	resolved_cfg = { ..cfg, text: Auto }
 	placement = resolve_placement(layout, parent, cfg.floating)?
 	layout_parent = match placement {
@@ -480,7 +455,7 @@ open_box_with_scroll = |layout, id, cfg, retained_offset| {
 		sizing_h: resolved_cfg.layout.height,
 		placement,
 	}
-	layout_with_id = register_node_id(layout_with_font, node_id, idx)?
+	layout_with_id = register_node_id(layout, node_id, idx)?
 	Ok({
 		..layout_with_id,
 		nodes: layout_with_id.nodes.append(node),
@@ -591,11 +566,11 @@ build_text_layout = |content, config, measured| {
 	{ line_height, lines, preferred, min_width }
 }
 
-build_text_node_data : Layout, U64, Text.Config, TextLayout -> TextNodeData
-build_text_node_data = |layout, font_index, config, text_layout| {
+build_text_node_data : Layout, Font, Text.Config, TextLayout -> TextNodeData
+build_text_node_data = |layout, font, config, text_layout| {
 	{
 		content_index: layout.text_contents.len(),
-		font: font_index,
+		font,
 		config,
 		line_height: text_layout.line_height,
 		wrap_width: text_layout.preferred.w,
@@ -610,8 +585,8 @@ add_text = |layout, node_id, content| {
 	idx = layout.nodes.len()
 	resolved_text = layout.stack.top().map_ok(|frame| frame.text).ok_or(layout.root_text)
 	text_config = resolved_text.config
-	font = layout.fonts.get(resolved_text.font).map_err(|_| FontNotFound(resolved_text.font))?
-	(text_cache, text_measure) = layout.text_cache.get_or_create(content, resolved_text.font, text_config, font)
+	font = resolved_text.font
+	(text_cache, text_measure) = layout.text_cache.get_or_create(content, text_config, font)
 	var $layout = layout
 	$layout = { ..$layout, text_cache }
 	text_layout = build_text_layout(content, text_config, text_measure)
@@ -652,7 +627,7 @@ wrap_text_nodes = |layout| {
 		match node.kind {
 			TextNode(text_data) => {
 				content = layout.text_contents.get(text_data.content_index)?
-				measured = layout.text_cache.get(content, text_data.font, text_data.config).map_err(|_| InternalError)?
+				measured = layout.text_cache.get(content, text_data.font.handle, text_data.config).map_err(|_| InternalError)?
 				wrap_width = text_wrap_width($nodes, node)?
 				lines_start = $lines.len()
 				wrapped = Text.wrap(content, text_data.config, measured.space_width, text_data.line_height, wrap_width, measured.words)
@@ -1015,7 +990,7 @@ emit_node_commands = |layout, index, root_index, root_expand, screen, commands| 
 			}
 			TextNode(text_data) => {
 				content = layout.text_contents.get(text_data.content_index)?
-				font = layout.fonts.get(text_data.font).map_err(|_| FontNotFound(text_data.font))?
+				font = text_data.font
 				for line_offset in 0..<text_data.lines_count {
 					line = layout.text_lines.get(text_data.lines_start + line_offset)?
 					config = text_data.config
@@ -1271,8 +1246,8 @@ test_word = |start, len, width| { start, len, width, is_newline: Bool.False }
 test_newline : U64 -> Text.Word
 test_newline = |start| { start, len: 1, width: 0, is_newline: Bool.True }
 
-seed_test_measurement : Layout, Str, U64, Text.Config, F32, F32, List(Text.Word) -> Layout
-seed_test_measurement = |layout, content, font_index, config, preferred_width, line_height, words| {
+seed_test_measurement : Layout, Str, Font, Text.Config, F32, F32, List(Text.Word) -> Layout
+seed_test_measurement = |layout, content, font, config, preferred_width, line_height, words| {
 	entry : TextMeasureCache.Entry
 	entry = {
 		preferred_width,
@@ -1284,7 +1259,7 @@ seed_test_measurement = |layout, content, font_index, config, preferred_width, l
 		contains_newlines: Bool.False,
 		generation: 0,
 	}
-	{ ..layout, text_cache: layout.text_cache.insert(content, font_index, config, entry) }
+	{ ..layout, text_cache: layout.text_cache.insert(content, font.handle, config, entry) }
 }
 
 add_test_text : Layout, Str, F32, List(Text.Word) -> Try(Layout, LayoutError)
