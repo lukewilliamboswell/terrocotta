@@ -296,6 +296,14 @@ Element := [].{
 
 	View(msg) : Iter(ElementOp(msg))
 
+	## Attributes attached to a box. Omitted attributes use the standard box
+	## identity, style, and event behavior.
+	BoxAttr(msg) : {
+		id : ElementId ?? Auto,
+		style ?: BoxStatus -> BoxConfig,
+		events ?: List(Event.Handler(msg)),
+	}
+
 	default_layout : LayoutConfig
 	default_layout = {
 		width: Grow({ min: 0, max: 10000 }),
@@ -338,10 +346,13 @@ Element := [].{
 	image = |texture| [Image(texture)].iter()
 
 	## Create a box container element.
-	box : ElementId, (BoxStatus -> BoxConfig), List(Event.Handler(msg)), List(View(msg)) -> View(msg)
-	box = |id, style_fn, events, children| {
+	box : BoxAttr(msg), List(View(msg)) -> View(msg)
+	box = |attr, children| {
+		style_fn = attr.?style ?? |_| style
+		events = attr.?events ?? []
+
 		# Wrap children in OpenBox/CloseBox and flatten iterator
-		open = Iter.single(OpenBox(id, style_fn, events))
+		open = Iter.single(OpenBox(attr.id, style_fn, events))
 		view = children.fold(open, |acc, child| acc.concat(child))
 		view.append(CloseBox)
 	}
@@ -349,28 +360,44 @@ Element := [].{
 
 expect {
 	view = Element.box(
-		Auto,
-		|_status| Element.style,
-		[],
+		{},
 		[],
 	)
 
 	match view.collect() {
-		[OpenBox(Auto, _, []), CloseBox] => Bool.True
+		[OpenBox(Auto, style_fn, []), CloseBox] => {
+			status = { hovered: False, pressed: False, focused: False, disabled: False }
+			(style_fn(status)).radius == Element.style.radius
+		}
 		_ => Bool.False
 	}
 }
 
 expect {
 	view = Element.box(
-		Auto,
-		|_status| Element.style,
+		{
+			events: [OnClick("save")],
+			id: Id("button"),
+			style: |_| Element.style.radius(7),
+		},
 		[],
+	)
+
+	match view.collect() {
+		[OpenBox(Id("button"), style_fn, [OnClick("save")]), CloseBox] => {
+			status = { hovered: False, pressed: False, focused: False, disabled: False }
+			(style_fn(status)).radius == 7
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	view = Element.box(
+		{},
 		[
 			Element.box(
-				Auto,
-				|_status| Element.style,
-				[],
+				{},
 				[
 					Element.text("hello"),
 				],

@@ -1,6 +1,6 @@
 ## Minimal floating-root demonstration.
 app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
 	tc: "../package/main.roc",
 }
 
@@ -29,21 +29,21 @@ update = |model, msg| {
 	{ ..model, attach: msg }
 }
 
-
 view : AppModel -> View(Msg)
 view = |model| {
 	box(
-		Id("page"),
-		|_| style
-			.direction(Col)
-			.child_align({ x: Start, y: Start })
-			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-			.gap(theme.gap)
-			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
-			.font_size(theme.font_size)
-			.font_color(theme.palette.background.base.content),
-		[],
+		{
+			id: Id("page"),
+			style: |_| style
+				.direction(Col)
+				.child_align({ x: Start, y: Start })
+				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+				.gap(theme.gap)
+				.background(theme.palette.background.base.fill)
+				.font_family(theme.font)
+				.font_size(theme.font_size)
+				.font_color(theme.palette.background.base.content),
+		},
 		[
 			text("Attachment points:"),
 			column(
@@ -77,36 +77,38 @@ view = |model| {
 			),
 			text("Container:"),
 			box(
-				Id("floating-container"),
-				|_| style
-				# .width(Grow({min: 0, max: 10000}))
-				# .height(Grow({min: 0, max: 10000}))
-					.font_size(theme.font_size)
-					.border({ color: theme.palette.primary.base.fill, top: 2, left: 2, right: 2, bottom: 2})
-					.radius(theme.radius),
-				[],
+				{
+					id: Id("floating-container"),
+					style: |_| style
+					# .width(Grow({min: 0, max: 10000}))
+					# .height(Grow({min: 0, max: 10000}))
+						.font_size(theme.font_size)
+						.border({ color: theme.palette.primary.base.fill, top: 2, left: 2, right: 2, bottom: 2 })
+						.radius(theme.radius),
+				},
 				[
 					box(
-						Id("floating-card"),
-						|_| style
-							.width(Fit({ min: 0, max: 10000 }))
-							.height(Fit({ min: 0, max: 10000 }))
-							.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-							.background(theme.palette.primary.base.fill)
-							.font_color(theme.palette.primary.base.content)
-							.font_size(theme.font_size)
-							.radius(theme.radius)
-							.floating(
-								Floating({
-									target: Parent,
-									config: {
-										..default_floating_config,
-										z_index: 100,
-										attach_points: { element: model.attach, target: model.attach },
-									},
-								}),
-							),
-						[],
+						{
+							id: Id("floating-card"),
+							style: |_| style
+								.width(Fit({ min: 0, max: 10000 }))
+								.height(Fit({ min: 0, max: 10000 }))
+								.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+								.background(theme.palette.primary.base.fill)
+								.font_color(theme.palette.primary.base.content)
+								.font_size(theme.font_size)
+								.radius(theme.radius)
+								.floating(
+									Floating({
+										target: Parent,
+										config: {
+											..default_floating_config,
+											z_index: 100,
+											attach_points: { element: model.attach, target: model.attach },
+										},
+									}),
+								),
+						},
 						[text("floating")],
 					),
 				],

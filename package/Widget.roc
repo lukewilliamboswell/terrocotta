@@ -27,27 +27,30 @@ Widget := [].{
 		dialog_colors = theme.palette.background.base
 
 		box(
-			config.id,
-			|_| style
-				.width(Grow({ min: 0, max: 10000 }))
-				.height(Grow({ min: 0, max: 10000 }))
-				.background(config.scrim)
-				.floating(Floating({ target: Root, config: { ..Element.default_floating_config, z_index: config.z_index, capture: Capture } }))
-				.child_align({ x: Center, y: Center }),
-			scrim_events,
+			{
+				id: config.id,
+				style: |_| style
+					.width(Grow({ min: 0, max: 10000 }))
+					.height(Grow({ min: 0, max: 10000 }))
+					.background(config.scrim)
+					.floating(Floating({ target: Root, config: { ..Element.default_floating_config, z_index: config.z_index, capture: Capture } }))
+					.child_align({ x: Center, y: Center }),
+				events: scrim_events,
+			},
 			[
 				box(
-					LocalId("dialog"),
-					|_| style
-						.width(Fit({ min: 0, max: 600 }))
-						.height(Fit({ min: 0, max: 10000 }))
-						.background(dialog_colors.fill)
-						.font_family(theme.font)
-						.font_size(theme.font_size)
-						.font_color(dialog_colors.content)
-						.radius(theme.radius)
-						.direction(Col),
-					[],
+					{
+						id: LocalId("dialog"),
+						style: |_| style
+							.width(Fit({ min: 0, max: 600 }))
+							.height(Fit({ min: 0, max: 10000 }))
+							.background(dialog_colors.fill)
+							.font_family(theme.font)
+							.font_size(theme.font_size)
+							.font_color(dialog_colors.content)
+							.radius(theme.radius)
+							.direction(Col),
+					},
 					[content],
 				),
 			],
@@ -58,11 +61,11 @@ Widget := [].{
 	label : Theme, Str -> View
 	label = |theme, content| {
 		box(
-			Auto,
-			|_| text_style(theme, theme.font_size, theme.palette.background.base)
-				.width(Fit({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 })),
-			[],
+			{
+				style: |_| text_style(theme, theme.font_size, theme.palette.background.base)
+					.width(Fit({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 })),
+			},
 			[
 				text(content),
 			],
@@ -73,11 +76,11 @@ Widget := [].{
 	heading : Theme, Str -> View
 	heading = |theme, content| {
 		box(
-			Auto,
-			|_| text_style(theme, theme.font_size * 1.5, theme.palette.primary.strong)
-				.width(Fit({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 })),
-			[],
+			{
+				style: |_| text_style(theme, theme.font_size * 1.5, theme.palette.primary.strong)
+					.width(Fit({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 })),
+			},
 			[
 				text(content),
 			],
@@ -88,14 +91,14 @@ Widget := [].{
 	row : Theme, List(View) -> View
 	row = |theme, children| {
 		box(
-			Auto,
-			|_| style
-				.width(Fit({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 }))
-				.direction(Row)
-				.gap(theme.gap)
-				.child_align({ x: Start, y: Start }),
-			[],
+			{
+				style: |_| style
+					.width(Fit({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 }))
+					.direction(Row)
+					.gap(theme.gap)
+					.child_align({ x: Start, y: Start }),
+			},
 			children,
 		)
 	}
@@ -104,14 +107,14 @@ Widget := [].{
 	column : Theme, List(View) -> View
 	column = |theme, children| {
 		box(
-			Auto,
-			|_| style
-				.width(Fit({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 }))
-				.direction(Col)
-				.gap(theme.gap)
-				.child_align({ x: Start, y: Start }),
-			[],
+			{
+				style: |_| style
+					.width(Fit({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 }))
+					.direction(Col)
+					.gap(theme.gap)
+					.child_align({ x: Start, y: Start }),
+			},
 			children,
 		)
 	}
@@ -122,20 +125,20 @@ Widget := [].{
 		colors = theme.palette.background.weak
 
 		box(
-			Auto,
-			|_| style
-				.width(Fit({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 }))
-				.background(colors.fill)
-				.font_family(theme.font)
-				.font_size(theme.font_size)
-				.font_color(colors.content)
-				.radius(theme.radius)
-				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-				.gap(theme.gap)
-				.direction(Col)
-				.child_align({ x: Start, y: Start }),
-			[],
+			{
+				style: |_| style
+					.width(Fit({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 }))
+					.background(colors.fill)
+					.font_family(theme.font)
+					.font_size(theme.font_size)
+					.font_color(colors.content)
+					.radius(theme.radius)
+					.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+					.gap(theme.gap)
+					.direction(Col)
+					.child_align({ x: Start, y: Start }),
+			},
 			children,
 		)
 	}
@@ -146,34 +149,35 @@ Widget := [].{
 		colors = role_pair(theme, variant)
 
 		box(
-			Auto,
-			|status| {
-				var $box_style = style
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
-					.background(colors.fill)
-					.font_family(theme.font)
-					.font_size(theme.font_size)
-					.font_color(colors.content)
-					.radius(theme.radius)
-					.pad((theme.gap, theme.gap, theme.gap / 2, theme.gap / 2))
-					.child_align({ x: Center, y: Center })
+			{
+				style: |status| {
+					var $box_style = style
+						.width(Fit({ min: 0, max: 10000 }))
+						.height(Fit({ min: 0, max: 10000 }))
+						.background(colors.fill)
+						.font_family(theme.font)
+						.font_size(theme.font_size)
+						.font_color(colors.content)
+						.radius(theme.radius)
+						.pad((theme.gap, theme.gap, theme.gap / 2, theme.gap / 2))
+						.child_align({ x: Center, y: Center })
 
-				$box_style = if status.focused {
-					$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-				} else {
-					$box_style
-				}
+					$box_style = if status.focused {
+						$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+					} else {
+						$box_style
+					}
 
-				if status.pressed {
-					$box_style.background(colors.fill.deviate(44))
-				} else if status.hovered {
-					$box_style.background(colors.fill.deviate(24))
-				} else {
-					$box_style
-				}
+					if status.pressed {
+						$box_style.background(colors.fill.deviate(44))
+					} else if status.hovered {
+						$box_style.background(colors.fill.deviate(24))
+					} else {
+						$box_style
+					}
+				},
+				events: events,
 			},
-			events,
 			[
 				text(content),
 			],
@@ -196,47 +200,48 @@ Widget := [].{
 		}
 
 		box(
-			Auto,
-			|status| {
-				var $box_style = style
-					.width(Fit({ min: 0, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
-					.font_family(theme.font)
-					.font_size(theme.font_size)
-					.font_color(theme.palette.background.base.content)
-					.direction(Row)
-					.gap(theme.gap / 2)
-					.child_align({ x: Start, y: Center })
+			{
+				style: |status| {
+					var $box_style = style
+						.width(Fit({ min: 0, max: 10000 }))
+						.height(Fit({ min: 0, max: 10000 }))
+						.font_family(theme.font)
+						.font_size(theme.font_size)
+						.font_color(theme.palette.background.base.content)
+						.direction(Row)
+						.gap(theme.gap / 2)
+						.child_align({ x: Start, y: Center })
 
-				if status.pressed {
-					$box_style.background(theme.palette.background.weak.fill.deviate(44))
-				} else if status.hovered {
-					$box_style.background(theme.palette.background.weak.fill.deviate(24))
-				} else {
-					$box_style
-				}
+					if status.pressed {
+						$box_style.background(theme.palette.background.weak.fill.deviate(44))
+					} else if status.hovered {
+						$box_style.background(theme.palette.background.weak.fill.deviate(24))
+					} else {
+						$box_style
+					}
+				},
+				events: [OnClick(on_change(next_checked))],
 			},
-			[OnClick(on_change(next_checked))],
 			[
 				box(
-					Auto,
-					|status| {
-						indicator_fill = if status.pressed {
-							indicator_colors.fill.deviate(44)
-						} else if status.hovered {
-							indicator_colors.fill.deviate(24)
-						} else {
-							indicator_colors.fill
-						}
+					{
+						style: |status| {
+							indicator_fill = if status.pressed {
+								indicator_colors.fill.deviate(44)
+							} else if status.hovered {
+								indicator_colors.fill.deviate(24)
+							} else {
+								indicator_colors.fill
+							}
 
-						style
-							.width(Fixed(box_size))
-							.height(Fixed(box_size))
-							.background(indicator_fill)
-							.radius(100)
-							.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 })
+							style
+								.width(Fixed(box_size))
+								.height(Fixed(box_size))
+								.background(indicator_fill)
+								.radius(100)
+								.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 })
+						},
 					},
-					[],
 					[],
 				),
 				text(content),
@@ -261,65 +266,67 @@ Widget := [].{
 		}
 
 		box(
-			Auto,
-			|status| {
-				var $box_style = style
-					.width(Fixed(track_size * 2))
-					.height(Fixed(track_size))
-					.background(track_colors.fill)
-					.radius(100)
+			{
+				style: |status| {
+					var $box_style = style
+						.width(Fixed(track_size * 2))
+						.height(Fixed(track_size))
+						.background(track_colors.fill)
+						.radius(100)
 
-				$box_style = if status.focused {
-					$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-				} else {
-					$box_style
-				}
+					$box_style = if status.focused {
+						$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+					} else {
+						$box_style
+					}
 
-				if status.pressed {
-					$box_style.background(track_colors.fill.deviate(44))
-				} else if status.hovered {
-					$box_style.background(track_colors.fill.deviate(24))
-				} else {
-					$box_style
-				}
+					if status.pressed {
+						$box_style.background(track_colors.fill.deviate(44))
+					} else if status.hovered {
+						$box_style.background(track_colors.fill.deviate(24))
+					} else {
+						$box_style
+					}
+				},
+				events: [OnClick(on_change(next_checked))],
 			},
-			[OnClick(on_change(next_checked))],
 			[
 				box(
-					Auto,
-					|_| {
-						target = if checked {
-							RightCenter
-						} else {
-							LeftCenter
-						}
-						inset = knob_size / 2
-						offset = if checked {
-							{ x: -inset, y: 0 }
-						} else {
-							{ x: inset, y: 0 }
-						}
+					{
+						style: |_| {
+							target = if checked {
+								RightCenter
+							} else {
+								LeftCenter
+							}
+							inset = knob_size / 2
+							offset = if checked {
+								{ x: -inset, y: 0 }
+							} else {
+								{ x: inset, y: 0 }
+							}
 
-						style
-							.width(Fixed(knob_size))
-							.height(Fixed(knob_size))
-							.background(theme.palette.background.base.fill)
-							.radius(100)
-							.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-							.floating(
-								Floating({
-									target: Parent,
-									config: {
-										..Element.default_floating_config,
-										z_index: 100,
-										attach_points: { element: Center, target },
-										offset,
-										capture: Passthrough,
-									},
-								}),
-							)
+							style
+								.width(Fixed(knob_size))
+								.height(Fixed(knob_size))
+								.background(theme.palette.background.base.fill)
+								.radius(100)
+								.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+								.floating(
+									Floating({
+										target: Parent,
+										config: {
+											..Element.default_floating_config,
+											z_index: 100,
+											attach_points: { element: Center, target },
+											offset,
+											capture: Passthrough,
+										},
+									}),
+								)
+						},
+						events: [OnClick(on_change(next_checked))],
 					},
-					[OnClick(on_change(next_checked))],
 					[],
 				),
 			],
@@ -332,17 +339,17 @@ Widget := [].{
 		colors = role_pair(theme, variant)
 
 		box(
-			Auto,
-			|_| style
-				.width(Fit({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 }))
-				.background(colors.fill)
-				.font_family(theme.font)
-				.font_size(theme.font_size * 0.85)
-				.font_color(colors.content)
-				.radius(theme.radius)
-				.pad((theme.gap / 2, theme.gap / 2, theme.gap / 4, theme.gap / 4)),
-			[],
+			{
+				style: |_| style
+					.width(Fit({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 }))
+					.background(colors.fill)
+					.font_family(theme.font)
+					.font_size(theme.font_size * 0.85)
+					.font_color(colors.content)
+					.radius(theme.radius)
+					.pad((theme.gap / 2, theme.gap / 2, theme.gap / 4, theme.gap / 4)),
+			},
 			[
 				text(content),
 			],
@@ -358,86 +365,87 @@ Widget := [].{
 		progress = value_to_progress(normalized_value, range.min, range.max)
 
 		box(
-			Auto,
-			|status| {
-				var $box_style = style
-					.width(Grow({ min: theme.font_size * 6, max: 10000 }))
-					.height(Fixed(theme.font_size // 2))
-					.background(track.fill)
-					.radius(theme.radius)
-					.direction(Row)
-					.child_align({ x: Start, y: Center })
+			{
+				style: |status| {
+					var $box_style = style
+						.width(Grow({ min: theme.font_size * 6, max: 10000 }))
+						.height(Fixed(theme.font_size // 2))
+						.background(track.fill)
+						.radius(theme.radius)
+						.direction(Row)
+						.child_align({ x: Start, y: Center })
 
-				$box_style = if status.focused {
-					$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-				} else {
-					$box_style
-				}
+					$box_style = if status.focused {
+						$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+					} else {
+						$box_style
+					}
 
-				if status.pressed {
-					$box_style.background(track.fill.deviate(44))
-				} else if status.hovered {
-					$box_style.background(track.fill.deviate(24))
-				} else {
-					$box_style.background(track.fill.deviate(14))
-				}
+					if status.pressed {
+						$box_style.background(track.fill.deviate(44))
+					} else if status.hovered {
+						$box_style.background(track.fill.deviate(24))
+					} else {
+						$box_style.background(track.fill.deviate(14))
+					}
+				},
+				events: [
+					OnDragStart(Box.box(|event| [on_change(slider_value_from_position(min, max, step, event.target.bounds, event.position))])),
+					OnDragMove(Box.box(|event| [on_change(slider_value_from_position(min, max, step, event.target.bounds, event.position))])),
+					OnDragEnd(Box.box(|event| [on_change(slider_value_from_position(min, max, step, event.target.bounds, event.position))])),
+				],
 			},
 			[
-				OnDragStart(Box.box(|event| [on_change(slider_value_from_position(min, max, step, event.target.bounds, event.position))])),
-				OnDragMove(Box.box(|event| [on_change(slider_value_from_position(min, max, step, event.target.bounds, event.position))])),
-				OnDragEnd(Box.box(|event| [on_change(slider_value_from_position(min, max, step, event.target.bounds, event.position))])),
-			],
-			[
 				box(
-					Auto,
-					|status| {
-						fill_color = if status.pressed {
-							fill.fill.deviate(44)
-						} else if status.hovered {
-							fill.fill.deviate(24)
-						} else {
-							fill.fill
-						}
+					{
+						style: |status| {
+							fill_color = if status.pressed {
+								fill.fill.deviate(44)
+							} else if status.hovered {
+								fill.fill.deviate(24)
+							} else {
+								fill.fill
+							}
 
-						style
-							.width(Percent(progress))
-							.height(Grow({ min: 0, max: 10000 }))
-							.background(fill_color)
-							.radius(theme.radius)
+							style
+								.width(Percent(progress))
+								.height(Grow({ min: 0, max: 10000 }))
+								.background(fill_color)
+								.radius(theme.radius)
+						},
 					},
-					[],
 					[
 						box(
-							Auto,
-							|status| {
-								handle_fill = if status.pressed {
-									fill.fill.deviate(44)
-								} else if status.hovered {
-									fill.fill.deviate(24)
-								} else {
-									fill.fill
-								}
+							{
+								style: |status| {
+									handle_fill = if status.pressed {
+										fill.fill.deviate(44)
+									} else if status.hovered {
+										fill.fill.deviate(24)
+									} else {
+										fill.fill
+									}
 
-								style
-									.width(Fixed(theme.font_size // 2))
-									.height(Fixed(theme.font_size // 2))
-									.background(handle_fill)
-									.radius(100)
-									.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-									.floating(
-										Floating({
-											target: Parent,
-											config: {
-												..Element.default_floating_config,
-												z_index: 100,
-												attach_points: { element: Center, target: RightCenter },
-												capture: Passthrough,
-												expand: { w: 4, h: 4 },
-											},
-										}),
-									)
+									style
+										.width(Fixed(theme.font_size // 2))
+										.height(Fixed(theme.font_size // 2))
+										.background(handle_fill)
+										.radius(100)
+										.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+										.floating(
+											Floating({
+												target: Parent,
+												config: {
+													..Element.default_floating_config,
+													z_index: 100,
+													attach_points: { element: Center, target: RightCenter },
+													capture: Passthrough,
+													expand: { w: 4, h: 4 },
+												},
+											}),
+										)
+								},
 							},
-							[],
 							[],
 						),
 					],
@@ -468,47 +476,48 @@ Widget := [].{
 			|option, index| select_option(theme, option, index, config.selected == index, on_select, on_toggle_open),
 		)
 		spacer = box(
-			Auto,
-			|_| style
-				.width(Grow({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 })),
-			[],
+			{
+				style: |_| style
+					.width(Grow({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 })),
+			},
 			[],
 		)
 
 		trigger_view = box(
-			Auto,
-			|status| {
-				trigger_colors = theme.palette.background.weak
+			{
+				style: |status| {
+					trigger_colors = theme.palette.background.weak
 
-				var $box_style = style
-					.width(Grow({ min: theme.font_size * 6, max: 10000 }))
-					.height(Fit({ min: 0, max: 10000 }))
-					.background(trigger_colors.fill)
-					.font_family(theme.font)
-					.font_size(theme.font_size)
-					.font_color(theme.palette.background.base.content)
-					.radius(theme.radius)
-					.pad((theme.gap, theme.gap, theme.gap / 2, theme.gap / 2))
-					.direction(Row)
-					.child_align({ x: Center, y: Center })
-					.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+					var $box_style = style
+						.width(Grow({ min: theme.font_size * 6, max: 10000 }))
+						.height(Fit({ min: 0, max: 10000 }))
+						.background(trigger_colors.fill)
+						.font_family(theme.font)
+						.font_size(theme.font_size)
+						.font_color(theme.palette.background.base.content)
+						.radius(theme.radius)
+						.pad((theme.gap, theme.gap, theme.gap / 2, theme.gap / 2))
+						.direction(Row)
+						.child_align({ x: Center, y: Center })
+						.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
 
-				$box_style = if status.focused {
-					$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-				} else {
-					$box_style
-				}
+					$box_style = if status.focused {
+						$box_style.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+					} else {
+						$box_style
+					}
 
-				if status.pressed {
-					$box_style.background(trigger_colors.fill.deviate(44))
-				} else if status.hovered {
-					$box_style.background(trigger_colors.fill.deviate(24))
-				} else {
-					$box_style
-				}
+					if status.pressed {
+						$box_style.background(trigger_colors.fill.deviate(44))
+					} else if status.hovered {
+						$box_style.background(trigger_colors.fill.deviate(24))
+					} else {
+						$box_style
+					}
+				},
+				events: [OnClick(on_toggle_open(next_open))],
 			},
-			[OnClick(on_toggle_open(next_open))],
 			if config.open {
 				[text(selected_label), spacer, text(">"), select_panel(theme, select_options)]
 			} else {
@@ -761,33 +770,33 @@ text_style = |theme, size, colors| {
 select_panel : Theme, List(View(msg)) -> View(msg)
 select_panel = |theme, select_options| {
 	box(
-		Auto,
-		|_| style
-			.width(Grow({ min: 0, max: 10000 }))
-			.height(Fit({ min: 0, max: 10000 }))
-			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
-			.font_size(theme.font_size)
-			.font_color(theme.palette.background.base.content)
-			.radius(theme.radius)
-			.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-		# .pad((theme.gap / 2, theme.gap / 2, theme.gap / 2, theme.gap / 2))
-			.direction(Col)
-			.child_align({ x: Start, y: Start })
-			.overflow(Hidden, Hidden)
-			.floating(
-				Floating({
-					target: Parent,
-					config: {
-						..Element.default_floating_config,
-						z_index: 50,
-						offset: { x: 0, y: theme.gap / 2 },
-						attach_points: { element: LeftTop, target: LeftBottom },
-						capture: Capture,
-					},
-				}),
-			),
-		[],
+		{
+			style: |_| style
+				.width(Grow({ min: 0, max: 10000 }))
+				.height(Fit({ min: 0, max: 10000 }))
+				.background(theme.palette.background.base.fill)
+				.font_family(theme.font)
+				.font_size(theme.font_size)
+				.font_color(theme.palette.background.base.content)
+				.radius(theme.radius)
+				.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
+			# .pad((theme.gap / 2, theme.gap / 2, theme.gap / 2, theme.gap / 2))
+				.direction(Col)
+				.child_align({ x: Start, y: Start })
+				.overflow(Hidden, Hidden)
+				.floating(
+					Floating({
+						target: Parent,
+						config: {
+							..Element.default_floating_config,
+							z_index: 50,
+							offset: { x: 0, y: theme.gap / 2 },
+							attach_points: { element: LeftTop, target: LeftBottom },
+							capture: Capture,
+						},
+					}),
+				),
+		},
 		select_options,
 	)
 }
@@ -796,21 +805,22 @@ select_panel = |theme, select_options| {
 select_scrim : (Bool -> msg) -> View(msg)
 select_scrim = |on_toggle_open| {
 	box(
-		Auto,
-		|_| style
-			.width(Grow({ min: 0, max: 10000 }))
-			.height(Grow({ min: 0, max: 10000 }))
-			.floating(
-				Floating({
-					target: Root,
-					config: {
-						..Element.default_floating_config,
-						z_index: 40,
-						capture: Capture,
-					},
-				}),
-			),
-		[OnClick(on_toggle_open(False))],
+		{
+			style: |_| style
+				.width(Grow({ min: 0, max: 10000 }))
+				.height(Grow({ min: 0, max: 10000 }))
+				.floating(
+					Floating({
+						target: Root,
+						config: {
+							..Element.default_floating_config,
+							z_index: 40,
+							capture: Capture,
+						},
+					}),
+				),
+			events: [OnClick(on_toggle_open(False))],
+		},
 		[],
 	)
 }
@@ -830,28 +840,29 @@ select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 	}
 
 	box(
-		Auto,
-		|status| {
-			var $box_style = style
-				.width(Grow({ min: 0, max: 10000 }))
-				.height(Fit({ min: 0, max: 10000 }))
-				.font_family(theme.font)
-				.font_size(theme.font_size)
-				.font_color(content_color)
-				.radius(theme.radius)
-				.pad((theme.gap / 2, theme.gap, theme.gap / 4, theme.gap / 4))
+		{
+			style: |status| {
+				var $box_style = style
+					.width(Grow({ min: 0, max: 10000 }))
+					.height(Fit({ min: 0, max: 10000 }))
+					.font_family(theme.font)
+					.font_size(theme.font_size)
+					.font_color(content_color)
+					.radius(theme.radius)
+					.pad((theme.gap / 2, theme.gap, theme.gap / 4, theme.gap / 4))
 
-			if is_selected {
-				$box_style.background(selected_colors.fill)
-			} else if status.pressed {
-				$box_style.background(selected_colors.fill.deviate(44))
-			} else if status.hovered {
-				$box_style.background(selected_colors.fill.deviate(24))
-			} else {
-				$box_style
-			}
+				if is_selected {
+					$box_style.background(selected_colors.fill)
+				} else if status.pressed {
+					$box_style.background(selected_colors.fill.deviate(44))
+				} else if status.hovered {
+					$box_style.background(selected_colors.fill.deviate(24))
+				} else {
+					$box_style
+				}
+			},
+			events: [OnClick(on_select(index)), OnClick(on_toggle_open(False))],
 		},
-		[OnClick(on_select(index)), OnClick(on_toggle_open(False))],
 		[
 			text(label),
 		],
