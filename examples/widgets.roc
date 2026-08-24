@@ -1,13 +1,11 @@
 ## Example showcasing theme-aware widgets.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
-	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
 	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rrt.Font
 import tc.Color
 import tc.Element exposing [View, box, style]
 import tc.Program
@@ -131,8 +129,8 @@ update = |model, msg| {
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })
 
-init! : App.InitCallback({ model : AppModel, font : Font }, _)
-init! = |startup| {
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| {
 	model = {
 		theme: Theme.dark,
 		slider_value: 45,
@@ -140,7 +138,7 @@ init! = |startup| {
 		select_selected: 0,
 		toggle_on: False,
 	}
-	Ok({ model, font: startup.default_font!()? })
+	Ok(model)
 }
 
 program = Program.new(configure, init!, update, view)

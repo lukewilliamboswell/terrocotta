@@ -6,6 +6,7 @@ import Element
 import Event
 import Drag
 import rrt.Devices
+import rrt.Font
 import rrt.Window
 import rrt.Keys
 import rrt.Mouse
@@ -43,6 +44,10 @@ default_scroll_state = {
 	momentum_time: 0,
 }
 
+default_font! : startup => Try(Font, [AssetPathInvalid, AssetNotFound, AssetReadFailed, FontLoadFailed, ResourceLimit, ..errors])
+	where [startup.default_font! : startup => Try(Font, [AssetPathInvalid, AssetNotFound, AssetReadFailed, FontLoadFailed, ResourceLimit, ..errors])]
+default_font! = |startup| startup.default_font!()
+
 Program :: [].{
 	State(model, msg) : {
 		model : model,
@@ -60,10 +65,11 @@ Program :: [].{
 	## the platform.
 	new = |configure, init!, update, view| {
 		run! = |startup| {
-			fields = init!(startup)?
+			font = default_font!(startup).map_err(|_| Exit(1))?
+			model = init!(startup)?
 			Ok({
-				model: fields.model,
-				layout: Layout.new(fields.font),
+				model,
+				layout: Layout.new(font),
 				event_bindings: Dict.empty(),
 				hovered: [],
 				focused: 0,

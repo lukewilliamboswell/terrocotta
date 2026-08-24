@@ -8,7 +8,6 @@ app [Model, Msg, program] {
 
 import rr.App
 import rr.Assets
-import rrt.Font
 import rrt.Texture
 
 import tc.Element exposing [View, box, image, style]
@@ -50,18 +49,14 @@ Msg : [
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Image Example").with_size({ width: 700, height: 500 })
 
-init! : App.InitCallback({ model : AppModel, font : Font }, _)
-init! = |startup| {
+init! : App.InitCallback(AppModel, _)
+init! = |_startup| {
 	store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
 	texture = Assets.load_texture!(store, "rocotta.png")?
-	font = startup.default_font!()?
 	Ok({
-		model: {
-			texture,
-			select_width: { open: False, selected: 2 },
-			select_height: { open: False, selected: 2 },
-		},
-		font,
+		texture,
+		select_width: { open: False, selected: 2 },
+		select_height: { open: False, selected: 2 },
 	})
 }
 

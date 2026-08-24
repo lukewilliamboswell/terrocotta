@@ -1,13 +1,11 @@
 ## Scrollable list demonstration.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
-	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
 	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rrt.Font
 
 import tc.Element exposing [box, text, View, style]
 import tc.Program
@@ -76,7 +74,7 @@ view = |_model| {
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 })
 
-init! : App.InitCallback({ model : {}, font : Font }, _)
-init! = |startup| Ok({ model: {}, font: startup.default_font!()? })
+init! : App.InitCallback({}, [])
+init! = |_startup| Ok({})
 
 program = Program.new(configure, init!, update, view)

@@ -1,13 +1,11 @@
 ## Text wrapping showcase using a font loaded once from a RocRay asset store.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
-	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
 	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rrt.Font
 
 import tc.Element exposing [TextWrap.*, View, box, style, text]
 import tc.Program
@@ -123,7 +121,7 @@ configure = |_args|
 		.with_resizable(Bool.True)
 		.with_default_font({ path: "examples/assets/Inter-Regular.ttf", size: 36 })
 
-init! : App.InitCallback({ model : AppModel, font : Font }, _)
-init! = |startup| Ok({ model: {}, font: startup.default_font!()? })
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| Ok({})
 
 program = Program.new(configure, init!, update, view)
