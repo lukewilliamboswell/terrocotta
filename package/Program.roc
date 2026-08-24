@@ -44,10 +44,6 @@ default_scroll_state = {
 	momentum_time: 0,
 }
 
-default_font! : startup => Try(Font, [AssetPathInvalid, AssetNotFound, AssetReadFailed, FontLoadFailed, ResourceLimit, ..errors])
-	where [startup.default_font! : startup => Try(Font, [AssetPathInvalid, AssetNotFound, AssetReadFailed, FontLoadFailed, ResourceLimit, ..errors])]
-default_font! = |startup| startup.default_font!()
-
 Program :: [].{
 	State(model, msg) : {
 		model : model,
@@ -64,8 +60,10 @@ Program :: [].{
 	## RocRay's current { init!, update!, render! } contract without importing
 	## the platform.
 	new = |configure, init!, update, view| {
+		run! : startup => Try(State(model, msg), [Exit(I64), ..errors])
+			where [startup.default_font! : startup => Try(Font, font_err)]
 		run! = |startup| {
-			font = default_font!(startup).map_err(|_| Exit(1))?
+			font = startup.default_font!().map_err(|_| Exit(1))?
 			model = init!(startup)?
 			Ok({
 				model,

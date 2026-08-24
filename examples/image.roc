@@ -3,7 +3,7 @@ app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-22-db56022",
+	roc: "nightly-2026-08-23-fb208ba",
 }
 
 import rr.App
