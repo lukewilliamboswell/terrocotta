@@ -1,8 +1,5 @@
 ## Example showcasing theme-aware widgets.
-app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
-	tc: "../package/main.roc"
-}
+app [Model, program] { rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst", tc: "../package/main.roc" }
 
 import rr.Host
 import rr.Draw
@@ -72,7 +69,7 @@ theme_card = |theme, name, model| {
 						model.toggle_on,
 						|checked| SetToggle(checked),
 					),
-					Widget.label(theme, if model.theme == Theme.dark "Theme Dark enabled" else "Theme Dark disabled")
+					Widget.label(theme, if model.theme == Theme.dark "Theme Dark enabled" else "Theme Dark disabled"),
 				],
 			),
 			Widget.label(theme, "Slider: ${model.slider_value.to_str()}"),
@@ -102,16 +99,16 @@ theme_card = |theme, name, model| {
 view : AppModel -> View
 view = |model| {
 	box(
-		Auto,
-		|_| style
-			.background(0x242424.Color)
-			.pad((model.theme.gap, model.theme.gap, model.theme.gap, model.theme.gap))
-			.gap(model.theme.gap)
-			.direction(Col)
-			.child_align({ x: Start, y: Start })
-			.font_family(model.font)
-			.font_size(model.theme.font_size),
-		[],
+		{
+			style: |_| style
+				.background(0x242424.Color)
+				.pad(model.theme.gap, model.theme.gap, model.theme.gap, model.theme.gap)
+				.gap(model.theme.gap)
+				.direction(Col)
+				.child_align({ x: Start, y: Start })
+				.font_family(model.font)
+				.font_size(model.theme.font_size),
+		},
 		[
 			theme_card(model.theme, "Widget Demo", model),
 		],

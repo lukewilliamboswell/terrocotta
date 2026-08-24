@@ -224,14 +224,14 @@ Drag := [].{
 drag_test_scene : () -> Try({ layout : Layout(draw), hovered : List(U64) }, Layout.LayoutError)
 drag_test_scene = || {
 	view = Element.box(
-		Auto,
-		|_| Element.style.width(Fixed(100)).height(Fixed(60)).child_align({ x: Start, y: Start }),
-		[],
+		{
+			style: |_| Element.style.width(Fixed(100)).height(Fixed(60)).child_align({ x: Start, y: Start }),
+		},
 		[
 			Element.box(
-				Auto,
-				|_| Element.style.width(Fixed(90)).height(Fixed(20)),
-				[],
+				{
+					style: |_| Element.style.width(Fixed(90)).height(Fixed(20)),
+				},
 				[],
 			),
 		],

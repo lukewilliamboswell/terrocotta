@@ -1,7 +1,7 @@
 ## Minimal counter with increment and decrement buttons.
 app [Model, program] {
-    rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
-    tc: "../package/main.roc",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+	tc: "../package/main.roc",
 }
 
 import rr.Host
@@ -38,22 +38,22 @@ update = |model, msg| match msg {
 view : AppModel -> View(Msg)
 view = |model| {
 	box(
-		Auto,
-		|_| style
-			.direction(Col)
-			.background(theme.palette.background.base.fill)
-			.font_family(theme.font)
-			.font_size(theme.font_size)
-			.font_color(theme.palette.background.base.content),
-		[],
+		{
+			style: |_| style
+				.direction(Col)
+				.background(theme.palette.background.base.fill)
+				.font_family(theme.font)
+				.font_size(theme.font_size)
+				.font_color(theme.palette.background.base.content),
+		},
 		[
 			box(
-				Auto,
-				|_| style
-					.height(Fit({ min: 0, max: 10000 }))
-					.gap(theme.gap)
-					.direction(Row),
-				[],
+				{
+					style: |_| style
+						.height(Fit({}))
+						.gap(theme.gap)
+						.direction(Row),
+				},
 				[
 					button(theme, Primary, "-", [OnClick(Decrement)]),
 					text("Count: ${model.count.to_str()}"),

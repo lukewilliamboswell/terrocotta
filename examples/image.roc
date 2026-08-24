@@ -30,8 +30,8 @@ index_to_sizing = |index| match index {
 	1 => Fixed(200)
 	2 => Fixed(300)
 	3 => Fixed(400)
-	4 => Fit({ min: 0, max: 10000 })
-	5 => Grow({ min: 0, max: 10000 })
+	4 => Fit({})
+	5 => Grow({})
 	_ => Fixed(300)
 }
 
@@ -72,27 +72,27 @@ update = |model, msg| match msg {
 view : AppModel -> View(Msg)
 view = |model| {
 	box(
-		Auto,
-		|_| style
-			.direction(Col)
-			.gap(theme.gap * 2)
-			.pad((theme.gap * 2, theme.gap * 2, theme.gap * 2, theme.gap * 2))
-			.background(theme.palette.background.base.fill)
-			.font_family(model.font)
-			.font_size(theme.font_size)
-			.child_align({ x: Center, y: Center }),
-		[],
+		{
+			style: |_| style
+				.direction(Col)
+				.gap(theme.gap * 2)
+				.pad(theme.gap * 2, theme.gap * 2, theme.gap * 2, theme.gap * 2)
+				.background(theme.palette.background.base.fill)
+				.font_family(model.font)
+				.font_size(theme.font_size)
+				.child_align({ x: Center, y: Center }),
+		},
 		[
 			Widget.label(theme, "Container box: 300px x 300px"),
 			# Controls header
 			box(
-				Auto,
-				|_| style
-					.height(Fit({ min: 0, max: 10000 }))
-					.direction(Row)
-					.gap(theme.gap)
-					.child_align({ x: Start, y: Center }),
-				[],
+				{
+					style: |_| style
+						.height(Fit({}))
+						.direction(Row)
+						.gap(theme.gap)
+						.child_align({ x: Start, y: Center }),
+				},
 				[
 					Widget.label(theme, "Image box:"),
 					Widget.select(
@@ -119,24 +119,24 @@ view = |model| {
 			),
 			# Container box holding centered image
 			box(
-				Auto,
-				|_| style
-					.width(Fixed(300))
-					.height(Fixed(300))
-					.background(theme.palette.background.weak.fill)
-					.radius(theme.radius)
-					.child_align({ x: Center, y: Center })
-					.overflow(Hidden, Hidden),
-				[],
+				{
+					style: |_| style
+						.width(Fixed(300))
+						.height(Fixed(300))
+						.background(theme.palette.background.weak.fill)
+						.radius(theme.radius)
+						.child_align({ x: Center, y: Center })
+						.overflow(Hidden, Hidden),
+				},
 				[
 					# Inner box sizing the image
 					box(
-						Auto,
-						|_| style
-							.width(index_to_sizing(model.select_width.selected))
-							.height(index_to_sizing(model.select_height.selected))
-							.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 }),
-						[],
+						{
+							style: |_| style
+								.width(index_to_sizing(model.select_width.selected))
+								.height(index_to_sizing(model.select_height.selected))
+								.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 }),
+						},
 						[
 							image(model.texture),
 						],
