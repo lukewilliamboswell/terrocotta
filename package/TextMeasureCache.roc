@@ -1,6 +1,6 @@
 ## Persistent cache for host text measurements.
-import Font exposing [Measurable]
 import Text
+import rrt.Font
 
 TextMeasureCache :: {
 	entries : Dict(Key, Entry),
@@ -55,11 +55,11 @@ TextMeasureCache :: {
 		{ ..cache, entries: capped_entries }
 	}
 
-	key : Str, Text.Config -> Key
-	key = |content, config| {
+	key : Str, U64, Text.Config -> Key
+	key = |content, font_index, config| {
 		{
 			text: content,
-			font: config.font,
+			font: font_index,
 			font_size: config.font_size,
 			spacing: config.spacing,
 		}
@@ -91,22 +91,22 @@ TextMeasureCache :: {
 
 	## Insert an already measured entry. This is useful for deterministic callers
 	## that cannot perform host effects, such as pure layout tests.
-	insert : TextMeasureCache, Str, Text.Config, Entry -> TextMeasureCache
-	insert = |cache, content, config, entry| {
-		cache_key = TextMeasureCache.key(content, config)
+	insert : TextMeasureCache, Str, U64, Text.Config, Entry -> TextMeasureCache
+	insert = |cache, content, font_index, config, entry| {
+		cache_key = TextMeasureCache.key(content, font_index, config)
 		current_entry = { ..entry, generation: cache.generation }
 		{ ..cache, entries: cache.entries.insert(cache_key, current_entry) }
 	}
 
 	## Read an existing measurement without performing host measurement.
-	get : TextMeasureCache, Str, Text.Config -> Try(Entry, [KeyNotFound, ..])
-	get = |cache, content, config| {
-		cache.entries.get(TextMeasureCache.key(content, config))
+	get : TextMeasureCache, Str, U64, Text.Config -> Try(Entry, [KeyNotFound, ..])
+	get = |cache, content, font_index, config| {
+		cache.entries.get(TextMeasureCache.key(content, font_index, config))
 	}
 
-	get_or_create : TextMeasureCache, Str, Text.Config, font -> (TextMeasureCache, Entry) where [font.Measurable]
-	get_or_create = |cache, content, config, font| {
-		cache_key = TextMeasureCache.key(content, config)
+	get_or_create : TextMeasureCache, Str, U64, Text.Config, Font -> (TextMeasureCache, Entry)
+	get_or_create = |cache, content, font_index, config, font| {
+		cache_key = TextMeasureCache.key(content, font_index, config)
 		match cache.entries.get(cache_key) {
 			Ok(entry) => TextMeasureCache.refresh_hit(cache, cache_key, entry)
 			Err(_) => {
@@ -122,7 +122,7 @@ TextMeasureCache :: {
 }
 
 test_config : Text.Config
-test_config = { font: 0, font_size: 5, spacing: 1, color: { r: 0, g: 0, b: 0, a: 255 }, line_height: 0, align: Left, wrap: Words }
+test_config = { font_size: 5, spacing: 1, color: { r: 0, g: 0, b: 0, a: 255 }, line_height: 0, align: Left, wrap: Words }
 
 test_word : U64, U64, F32 -> Text.Word
 test_word = |start, len, width| { start, len, width, is_newline: Bool.False }
@@ -141,7 +141,7 @@ test_entry = {
 
 ## Advancing the cache preserves current entries and increments its generation.
 expect {
-	cache_key = TextMeasureCache.key("cached text", test_config)
+	cache_key = TextMeasureCache.key("cached text", 0, test_config)
 	empty_entries = Dict.empty()
 	entries = empty_entries.insert(cache_key, test_entry)
 	cache_seed = { ..TextMeasureCache.new(), entries }
@@ -152,7 +152,7 @@ expect {
 
 ## Reset clears entries and returns the cache to generation zero.
 expect {
-	key = TextMeasureCache.key("cached text", test_config)
+	key = TextMeasureCache.key("cached text", 0, test_config)
 	entry = { ..test_entry, generation: 4 }
 	entries = Dict.single(key, entry)
 	cache = { ..TextMeasureCache.new(), entries, generation: 4 }
@@ -164,12 +164,12 @@ expect {
 ## Test cache key hashing.
 expect {
 	base = test_config
-	base_key = TextMeasureCache.key("same text", base)
-	render_key = TextMeasureCache.key("same text", { ..base, color: { r: 1, g: 2, b: 3, a: 4 }, align: Right, wrap: None, line_height: 50 })
-	font_key = TextMeasureCache.key("same text", { ..base, font: 99 })
-	size_key = TextMeasureCache.key("same text", { ..base, font_size: base.font_size + 1 })
-	spacing_key = TextMeasureCache.key("same text", { ..base, spacing: base.spacing + 1 })
-	content_key = TextMeasureCache.key("different text", base)
+	base_key = TextMeasureCache.key("same text", 0, base)
+	render_key = TextMeasureCache.key("same text", 0, { ..base, color: { r: 1, g: 2, b: 3, a: 4 }, align: Right, wrap: None, line_height: 50 })
+	font_key = TextMeasureCache.key("same text", 99, base)
+	size_key = TextMeasureCache.key("same text", 0, { ..base, font_size: base.font_size + 1 })
+	spacing_key = TextMeasureCache.key("same text", 0, { ..base, spacing: base.spacing + 1 })
+	content_key = TextMeasureCache.key("different text", 0, base)
 
 	base_key == render_key
 		and base_key != font_key
@@ -180,7 +180,7 @@ expect {
 
 ## Cache hits from a previous generation refresh the entry generation.
 expect {
-	cache_key = TextMeasureCache.key("same text", test_config)
+	cache_key = TextMeasureCache.key("same text", 0, test_config)
 	entries = Dict.empty().insert(cache_key, test_entry)
 	cache = { ..TextMeasureCache.new(), entries, generation: 1 }
 	(refreshed_cache, refreshed_entry) = TextMeasureCache.refresh_hit(cache, cache_key, test_entry)
@@ -193,8 +193,8 @@ expect {
 
 ## Pure lookup returns seeded canonical measurements.
 expect {
-	cache = TextMeasureCache.new().insert("cached text", test_config, test_entry)
-	match cache.get("cached text", test_config) {
+	cache = TextMeasureCache.new().insert("cached text", 0, test_config, test_entry)
+	match cache.get("cached text", 0, test_config) {
 		Ok(entry) => entry == test_entry
 		Err(_) => Bool.False
 	}
@@ -203,7 +203,7 @@ expect {
 ## Pure lookup reports a missing measurement without invoking the host.
 expect {
 	cache = TextMeasureCache.new()
-	match cache.get("missing text", test_config) {
+	match cache.get("missing text", 0, test_config) {
 		Err(KeyNotFound) => Bool.True
 		_ => Bool.False
 	}
@@ -214,7 +214,7 @@ expect {
 	var $cache = TextMeasureCache.new()
 
 	# add entry
-	key = TextMeasureCache.key("old text", test_config)
+	key = TextMeasureCache.key("old text", 0, test_config)
 	entries = Dict.single(key, test_entry)
 	$cache = { ..$cache, entries }
 

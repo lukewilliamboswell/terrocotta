@@ -1,12 +1,10 @@
 ## Text measurement and wrapping helpers for layout.
 import Element
 import Color
-import Font exposing [Measurable]
 import rrt.Font as RrtFont
 
 Text := [].{
 	Config : {
-		font : U64,
 		font_size : F32,
 		spacing : F32,
 		color : Color,
@@ -48,7 +46,7 @@ Text := [].{
 		contains_newlines : Bool,
 	}
 
-	measure : Str, Config, font -> Measured where [font.Measurable]
+	measure : Str, Config, RrtFont -> Measured
 	measure = |content, config, font| {
 		measured = measure_canonical(content, config, font)
 		line_h = apply_line_height(config, measured.natural_line_height)
@@ -72,7 +70,7 @@ Text := [].{
 		}
 	}
 
-	measure_canonical : Str, Config, font -> CanonicalMeasured where [font.Measurable]
+	measure_canonical : Str, Config, RrtFont -> CanonicalMeasured
 	measure_canonical = |content, config, font| {
 		space_raw = measure_raw(font, config, " ")
 		space_width = space_raw.width
@@ -117,7 +115,7 @@ Text := [].{
 	}
 }
 
-measure_raw : font, Text.Config, Str -> RrtFont.Size where [font.Measurable]
+measure_raw : RrtFont, Text.Config, Str -> RrtFont.Size
 measure_raw = |font, config, content| {
 	RrtFont.measure(
 		font,
@@ -129,7 +127,7 @@ measure_raw = |font, config, content| {
 	)
 }
 
-measure_line_height : Str, Text.Config, font -> F32 where [font.Measurable]
+measure_line_height : Str, Text.Config, RrtFont -> F32
 measure_line_height = |content, config, font| {
 	sample = if bytes_len(content) > 0 "M" else " "
 	(measure_raw(font, config, sample)).height
@@ -147,7 +145,7 @@ slice = |content, start, len| {
 max_f32 : F32, F32 -> F32
 max_f32 = |a, b| if a > b a else b
 
-measure_run : Str, U64, U64, F32, U64, Text.Config, font -> { word : Text.Word, trimmed_width : F32 } where [font.Measurable]
+measure_run : Str, U64, U64, F32, U64, Text.Config, RrtFont -> { word : Text.Word, trimmed_width : F32 }
 measure_run = |content, start, len, extra_width, trailing_len, config, font| {
 	text = slice(content, start, len)
 	raw = measure_raw(font, config, text)
@@ -158,7 +156,7 @@ measure_run = |content, start, len, extra_width, trailing_len, config, font| {
 newline_word : U64 -> Text.Word
 newline_word = |start| { start, len: 1, width: 0, is_newline: Bool.True }
 
-measure_words : Str, Text.Config, F32, font -> Text.CanonicalMeasured where [font.Measurable]
+measure_words : Str, Text.Config, F32, RrtFont -> Text.CanonicalMeasured
 measure_words = |content, config, space_width, font| {
 	bytes = content.to_utf8()
 	line_h = measure_line_height(content, config, font)
@@ -319,7 +317,7 @@ wrap_words = |width, words, content, space_width, line_h| {
 ## TESTS ##
 
 test_config : Element.TextWrap -> Text.Config
-test_config = |wrap| { font: 0, font_size: 5, spacing: 1, color: Color.black, line_height: 10, align: Left, wrap }
+test_config = |wrap| { font_size: 5, spacing: 1, color: Color.black, line_height: 10, align: Left, wrap }
 
 test_word : U64, U64, F32 -> Text.Word
 test_word = |start, len, width| { start, len, width, is_newline: Bool.False }

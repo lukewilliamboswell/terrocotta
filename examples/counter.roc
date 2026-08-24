@@ -1,23 +1,23 @@
 ## Minimal counter with increment and decrement buttons.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
+	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-21-90da19f",
+	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rr.Draw
+import rrt.Font
 # import rr.Keys
 
 import tc.Element exposing [box, text, View, style]
-import tc.Font
 import tc.Program
 import tc.Theme
 import tc.Widget exposing [button]
 
 theme = Theme.dark
 
-Model : Program.State(AppModel, Msg, Draw.Font)
+Model : Program.State(AppModel, Msg)
 
 AppModel : {
 	count : I32,
@@ -31,8 +31,8 @@ Msg : [
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Counter Example").with_size({ width: 640, height: 420 })
 
-init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, [])
-init! = |_startup| Ok({ model: { count: 0 }, font: Font.handle(0, Draw.default_font!()) })
+init! : App.InitCallback({ model : AppModel, font : Font }, _)
+init! = |startup| Ok({ model: { count: 0 }, font: startup.default_font!()? })
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| match msg {
@@ -40,7 +40,7 @@ update = |model, msg| match msg {
 	Increment => { ..model, count: model.count + 1 }
 }
 
-view : AppModel -> View(Msg, Draw.Font)
+view : AppModel -> View(Msg)
 view = |model| {
 	box(
 		Auto,

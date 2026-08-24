@@ -99,6 +99,7 @@ LayoutTypes := [].{
 
 	TextNodeData : {
 		content_index : U64,
+		font : U64,
 		config : Text.Config,
 		line_height : F32,
 		wrap_width : F32,

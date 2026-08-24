@@ -1,6 +1,7 @@
 ## Render command types for Roc-Clay layout commands.
 import Color
 import Element
+import rrt.Font
 import rrt.Texture
 
 RenderVector2 : { x : F32, y : F32 }
@@ -56,11 +57,11 @@ RenderDrawTextureRaw : {
 	tint : Color,
 }
 
-RenderCommandRaw(font) := [
+RenderCommandRaw := [
 	Rectangle({ x : F32, y : F32, width : F32, height : F32, color : Color }),
 	RoundedRectangle({ x : F32, y : F32, width : F32, height : F32, radius : F32, color : Color }),
 	Border(RenderBorderRaw),
-	Text(RenderTextRawConfig(font)),
+	Text(RenderTextRawConfig),
 	Image(RenderImageRaw),
 	ScissorStart({ x : F32, y : F32, width : F32, height : F32 }),
 	ScissorEnd,
@@ -79,14 +80,14 @@ RenderBorderRaw := {
 	bottom : F32,
 }
 
-RenderTextRawConfig(font) := {
+RenderTextRawConfig := {
 	x : F32,
 	y : F32,
 	text : Str,
 	font_size : F32,
 	spacing : F32,
 	color : Color,
-	font : font,
+	font : Font,
 }
 
 RenderImageRaw := {
@@ -100,9 +101,9 @@ RenderImageRaw := {
 RenderTextSize : { width : F32, height : F32 }
 
 Render := [].{
-	Command(font) : RenderCommandRaw(font)
+	Command : RenderCommandRaw
 	BorderConfig : RenderBorderRaw
-	TextConfig(font) : RenderTextRawConfig(font)
+	TextConfig : RenderTextRawConfig
 	Vector2 : RenderVector2
 	Rect : RenderRect
 	TextRaw : RenderTextRaw
@@ -112,33 +113,11 @@ Render := [].{
 	DrawTextureRaw : RenderDrawTextureRaw
 	TextSize : RenderTextSize
 
-	draw_commands! : frame, List(Render.Command(font)) => Try({}, [Exit(I64), ..])
+	draw_commands! : frame, List(Render.Command) => Try({}, [Exit(I64), ..])
 		where [
-			frame.rectangle! : frame,
-			{
-				x : F32,
-				y : F32,
-				width : F32,
-				height : F32,
-				style : {
-					fill : [NoFill, Fill(Color.Rgba)],
-					stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })],
-				},
-			} => {},
-			frame.rounded_rectangle! : frame,
-			{
-				x : F32,
-				y : F32,
-				width : F32,
-				height : F32,
-				radius : F32,
-				segments : I32,
-				style : {
-					fill : [NoFill, Fill(Color.Rgba)],
-					stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })],
-				},
-			} => {},
-			frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
+			frame.rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
+			frame.rounded_rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
+			frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : Font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
 			frame.texture! : frame, TextureDraw => {},
 			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 		]
@@ -150,33 +129,11 @@ Render := [].{
 }
 
 ## Draw one contiguous command region, honoring the enclosing scissor bounds.
-draw_region! : frame, List(Render.Command(font)), [NoScissor, Scissor(RenderRect)] => Try({}, [Exit(I64), ..])
+draw_region! : frame, List(Render.Command), [NoScissor, Scissor(RenderRect)] => Try({}, [Exit(I64), ..])
 	where [
-		frame.rectangle! : frame,
-		{
-			x : F32,
-			y : F32,
-			width : F32,
-			height : F32,
-			style : {
-				fill : [NoFill, Fill(Color.Rgba)],
-				stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })],
-			},
-		} => {},
-		frame.rounded_rectangle! : frame,
-		{
-			x : F32,
-			y : F32,
-			width : F32,
-			height : F32,
-			radius : F32,
-			segments : I32,
-			style : {
-				fill : [NoFill, Fill(Color.Rgba)],
-				stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })],
-			},
-		} => {},
-		frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
+		frame.rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
+		frame.rounded_rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
+		frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : Font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
 		frame.texture! : frame, TextureDraw => {},
 		frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 	]
@@ -312,10 +269,10 @@ position_texture = |img| {
 
 ## Split commands following a ScissorStart into the nested region up to the
 ## matching ScissorEnd and the commands after it.
-split_scissor : List(Render.Command(font)) -> { inner : List(Render.Command(font)), after : List(Render.Command(font)) }
+split_scissor : List(Render.Command) -> { inner : List(Render.Command), after : List(Render.Command) }
 split_scissor = |commands| split_scissor_at(commands, 0, [])
 
-split_scissor_at : List(Render.Command(font)), U64, List(Render.Command(font)) -> { inner : List(Render.Command(font)), after : List(Render.Command(font)) }
+split_scissor_at : List(Render.Command), U64, List(Render.Command) -> { inner : List(Render.Command), after : List(Render.Command) }
 split_scissor_at = |commands, depth, acc| {
 	match commands {
 		[] => { inner: acc, after: [] }

@@ -1,28 +1,28 @@
 ## Scrollable list demonstration.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
+	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-21-90da19f",
+	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rr.Draw
+import rrt.Font
 
 import tc.Element exposing [box, text, View, style]
-import tc.Font
 import tc.Program
 import tc.Theme
 
 theme = Theme.light
 
-Model : Program.State({}, Msg, Draw.Font)
+Model : Program.State({}, Msg)
 
 Msg : []
 
 update : {}, Msg -> {}
 update = |model, _msg| model
 
-row : U64 -> View(Msg, Draw.Font)
+row : U64 -> View(Msg)
 row = |index| {
 	box(
 		IdI("scroll-row", index),
@@ -36,7 +36,7 @@ row = |index| {
 	)
 }
 
-view : {} -> View(Msg, Draw.Font)
+view : {} -> View(Msg)
 view = |_model| {
 	var $rows = []
 	for index in 1..<20 {
@@ -76,7 +76,7 @@ view = |_model| {
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 })
 
-init! : App.InitCallback({ model : {}, font : Font.Handle(Draw.Font) }, [])
-init! = |_startup| Ok({ model: {}, font: Font.handle(0, Draw.default_font!()) })
+init! : App.InitCallback({ model : {}, font : Font }, _)
+init! = |startup| Ok({ model: {}, font: startup.default_font!()? })
 
 program = Program.new(configure, init!, update, view)

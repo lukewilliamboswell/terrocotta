@@ -1,26 +1,26 @@
 ## Example showcasing theme-aware widgets.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
+	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-21-90da19f",
+	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rr.Draw
+import rrt.Font
 import tc.Color
 import tc.Element exposing [View, box, style]
-import tc.Font
 import tc.Program
 import tc.Theme
 import tc.Widget
 
-Model : Program.State(AppModel, Msg, Draw.Font)
+Model : Program.State(AppModel, Msg)
 
 AppModel : { theme : Theme, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
 
 Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool)]
 
-theme_card : Theme, Str, AppModel -> View(Msg, Draw.Font)
+theme_card : Theme, Str, AppModel -> View(Msg)
 theme_card = |theme, name, model| {
 	Widget.panel(
 		theme,
@@ -99,7 +99,7 @@ theme_card = |theme, name, model| {
 	)
 }
 
-view : AppModel -> View(Msg, Draw.Font)
+view : AppModel -> View(Msg)
 view = |model| {
 	box(
 		Auto,
@@ -131,8 +131,8 @@ update = |model, msg| {
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })
 
-init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, [])
-init! = |_startup| {
+init! : App.InitCallback({ model : AppModel, font : Font }, _)
+init! = |startup| {
 	model = {
 		theme: Theme.dark,
 		slider_value: 45,
@@ -140,7 +140,7 @@ init! = |_startup| {
 		select_selected: 0,
 		toggle_on: False,
 	}
-	Ok({ model, font: Font.handle(0, Draw.default_font!()) })
+	Ok({ model, font: startup.default_font!()? })
 }
 
 program = Program.new(configure, init!, update, view)

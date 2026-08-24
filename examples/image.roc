@@ -3,16 +3,15 @@ app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
 	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-21-90da19f",
+	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rr.Draw
 import rr.Assets
+import rrt.Font
 import rrt.Texture
 
 import tc.Element exposing [View, box, image, style]
-import tc.Font
 import tc.Program
 import tc.Theme
 import tc.Widget
@@ -33,7 +32,7 @@ index_to_sizing = |index| match index {
 	_ => Fixed(300)
 }
 
-Model : Program.State(AppModel, Msg, Draw.Font)
+Model : Program.State(AppModel, Msg)
 
 AppModel : {
 	texture : Texture,
@@ -51,11 +50,11 @@ Msg : [
 configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Image Example").with_size({ width: 700, height: 500 })
 
-init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, _)
-init! = |_startup| {
+init! : App.InitCallback({ model : AppModel, font : Font }, _)
+init! = |startup| {
 	store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
 	texture = Assets.load_texture!(store, "rocotta.png")?
-	font = Font.handle(0, Draw.default_font!())
+	font = startup.default_font!()?
 	Ok({
 		model: {
 			texture,
@@ -74,7 +73,7 @@ update = |model, msg| match msg {
 	SelectHeight(index) => { ..model, select_height: { open: False, selected: index } }
 }
 
-view : AppModel -> View(Msg, Draw.Font)
+view : AppModel -> View(Msg)
 view = |model| {
 	box(
 		Auto,

@@ -18,7 +18,7 @@ Widget := [].{
 		scrim : Color,
 		on_dismiss : [DismissWith(msg), NoDismiss],
 	},
-	View(msg, font) -> View(msg, font)
+	View(msg) -> View(msg)
 	modal = |theme, config, content| {
 		scrim_events = match config.on_dismiss {
 			DismissWith(message) => [OnClick(message)]
@@ -54,7 +54,7 @@ Widget := [].{
 	}
 
 	## Display body text using the theme background content color.
-	label : Theme, Str -> View(msg, font)
+	label : Theme, Str -> View(msg)
 	label = |theme, content| {
 		box(
 			Auto,
@@ -69,7 +69,7 @@ Widget := [].{
 	}
 
 	## Display larger heading text using the theme primary color.
-	heading : Theme, Str -> View(msg, font)
+	heading : Theme, Str -> View(msg)
 	heading = |theme, content| {
 		box(
 			Auto,
@@ -84,7 +84,7 @@ Widget := [].{
 	}
 
 	## Lay out children horizontally with the theme gap.
-	row : Theme, List(View(msg, font)) -> View(msg, font)
+	row : Theme, List(View(msg)) -> View(msg)
 	row = |theme, children| {
 		box(
 			Auto,
@@ -100,7 +100,7 @@ Widget := [].{
 	}
 
 	## Lay out children vertically with the theme gap.
-	column : Theme, List(View(msg, font)) -> View(msg, font)
+	column : Theme, List(View(msg)) -> View(msg)
 	column = |theme, children| {
 		box(
 			Auto,
@@ -116,7 +116,7 @@ Widget := [].{
 	}
 
 	## Group children on a weak background surface.
-	panel : Theme, List(View(msg, font)) -> View(msg, font)
+	panel : Theme, List(View(msg)) -> View(msg)
 	panel = |theme, children| {
 		colors = theme.palette.background.weak
 
@@ -139,7 +139,7 @@ Widget := [].{
 	}
 
 	## Display a button-shaped command label with hover, press, and focus styling.
-	button : Theme, Variant, Str, List(Event.Handler(msg)) -> View(msg, font)
+	button : Theme, Variant, Str, List(Event.Handler(msg)) -> View(msg)
 	button = |theme, variant, content, events| {
 		colors = role_pair(theme, variant)
 
@@ -178,7 +178,7 @@ Widget := [].{
 	}
 
 	## Display a model-owned checkbox with a text label.
-	checkbox : Theme, Bool, Str, (Bool -> msg) -> View(msg, font)
+	checkbox : Theme, Bool, Str, (Bool -> msg) -> View(msg)
 	checkbox = |theme, checked, content, on_change| {
 		box_size = theme.font_size
 		next_checked = if checked {
@@ -241,7 +241,7 @@ Widget := [].{
 	}
 
 	## Display a model-owned toggle switch.
-	toggle : Theme, Bool, (Bool -> msg) -> View(msg, font)
+	toggle : Theme, Bool, (Bool -> msg) -> View(msg)
 	toggle = |theme, checked, on_change| {
 		track_size = theme.font_size
 		knob_size = theme.font_size
@@ -323,7 +323,7 @@ Widget := [].{
 	}
 
 	## Display a compact semantic label.
-	badge : Theme, Variant, Str -> View(msg, font)
+	badge : Theme, Variant, Str -> View(msg)
 	badge = |theme, variant, content| {
 		colors = role_pair(theme, variant)
 
@@ -449,7 +449,7 @@ Widget := [].{
 		options : List(Str),
 		on_toggle_open : Bool -> msg,
 		on_select : U64 -> msg,
-	} -> View(msg, font)
+	} -> View(msg)
 	select = |theme, config| {
 		on_toggle_open = config.on_toggle_open
 		on_select = config.on_select
@@ -743,7 +743,7 @@ role_pair = |theme, variant| {
 }
 
 ## Base text style shared by themed text widgets.
-text_style : Theme, F32, Pair -> Element.BoxConfig(font)
+text_style : Theme, F32, Pair -> Element.BoxConfig
 text_style = |_theme, size, colors| {
 	style
 		.font_size(size)
@@ -751,7 +751,7 @@ text_style = |_theme, size, colors| {
 }
 
 ## Build the floating dropdown panel for a select, attached to its trigger.
-select_panel : Theme, List(View(msg, font)) -> View(msg, font)
+select_panel : Theme, List(View(msg)) -> View(msg)
 select_panel = |theme, select_options| {
 	box(
 		Auto,
@@ -785,7 +785,7 @@ select_panel = |theme, select_options| {
 }
 
 ## Build the full-screen click-catcher that dismisses an open select.
-select_scrim : (Bool -> msg) -> View(msg, font)
+select_scrim : (Bool -> msg) -> View(msg)
 select_scrim = |on_toggle_open| {
 	box(
 		Auto,
@@ -808,7 +808,7 @@ select_scrim = |on_toggle_open| {
 }
 
 ## Render one selectable row for a select dropdown.
-select_option : Theme, Str, U64, Bool, (U64 -> msg), (Bool -> msg) -> View(msg, font)
+select_option : Theme, Str, U64, Bool, (U64 -> msg), (Bool -> msg) -> View(msg)
 select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 	selected_colors = if is_selected {
 		theme.palette.primary.base

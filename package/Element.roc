@@ -2,7 +2,7 @@
 ## Provides text, box, and stack for building view trees as Iter(UIMessage).
 import Color
 import Event
-import Font
+import rrt.Font
 import rrt.Texture
 
 Element := [].{
@@ -52,7 +52,7 @@ Element := [].{
 		None,
 	]
 
-	TextStyle(font) : [Auto, Font(TextConfig(font))]
+	TextStyle : [Auto, Font(TextConfig)]
 
 	Overflow : [Visible, Hidden, Scroll]
 
@@ -141,9 +141,9 @@ Element := [].{
 		child_align : { x : ChildAlign, y : ChildAlign },
 	}
 
-	TextConfig(font) : {
+	TextConfig : {
 		# Text font.
-		font : [InheritFont, FontHandle(Font.Handle(font))],
+		font : [InheritFont, FontHandle(Font)],
 		# Text font size (in px).
 		font_size : F32,
 		# Space between glyphs (in px).
@@ -158,49 +158,49 @@ Element := [].{
 		wrap : TextWrap,
 	}
 
-	BoxConfig(font) := {
+	BoxConfig := {
 		layout : LayoutConfig,
 		background : Color,
 		radius : F32,
 		border : BorderConfig,
-		text : TextStyle(font),
+		text : TextStyle,
 		overflow : { x : Overflow, y : Overflow },
 		floating : Floating,
 	}.{
 
 		# LayoutConfig
-		width : BoxConfig(font), Sizing -> BoxConfig(font)
+		width : BoxConfig, Sizing -> BoxConfig
 		width = |self, width| {
 			{ ..self, layout: { ..self.layout, width: width } }
 		}
 
-		height : BoxConfig(font), Sizing -> BoxConfig(font)
+		height : BoxConfig, Sizing -> BoxConfig
 		height = |self, height| {
 			{ ..self, layout: { ..self.layout, height: height } }
 		}
 
-		pad : BoxConfig(font), (F32, F32, F32, F32) -> BoxConfig(font)
+		pad : BoxConfig, (F32, F32, F32, F32) -> BoxConfig
 		pad = |self, padding| {
 			{ ..self, layout: { ..self.layout, pad: { left: padding.0, right: padding.1, top: padding.2, bottom: padding.3 } } }
 		}
 
-		direction : BoxConfig(font), Direction -> BoxConfig(font)
+		direction : BoxConfig, Direction -> BoxConfig
 		direction = |self, direction| {
 			{ ..self, layout: { ..self.layout, direction: direction } }
 		}
 
-		gap : BoxConfig(font), F32 -> BoxConfig(font)
+		gap : BoxConfig, F32 -> BoxConfig
 		gap = |self, gap| {
 			{ ..self, layout: { ..self.layout, gap: gap } }
 		}
 
-		child_align : BoxConfig(font), { x : ChildAlign, y : ChildAlign } -> BoxConfig(font)
+		child_align : BoxConfig, { x : ChildAlign, y : ChildAlign } -> BoxConfig
 		child_align = |self, align| {
 			{ ..self, layout: { ..self.layout, child_align: align } }
 		}
 
 		# TextConfig
-		font_family : BoxConfig(font), Font.Handle(font) -> BoxConfig(font)
+		font_family : BoxConfig, Font -> BoxConfig
 		font_family = |self, font| {
 			text = match self.text {
 				Auto => default_text
@@ -208,7 +208,7 @@ Element := [].{
 			}
 			{ ..self, text: Font({ ..text, font: FontHandle(font) }) }
 		}
-		font_size : BoxConfig(font), F32 -> BoxConfig(font)
+		font_size : BoxConfig, F32 -> BoxConfig
 		font_size = |self, size| {
 			text = match self.text {
 				Auto => default_text
@@ -216,7 +216,7 @@ Element := [].{
 			}
 			{ ..self, text: Font({ ..text, font_size: size }) }
 		}
-		spacing : BoxConfig(font), F32 -> BoxConfig(font)
+		spacing : BoxConfig, F32 -> BoxConfig
 		spacing = |self, spacing| {
 			text = match self.text {
 				Auto => default_text
@@ -224,7 +224,7 @@ Element := [].{
 			}
 			{ ..self, text: Font({ ..text, spacing }) }
 		}
-		font_color : BoxConfig(font), Color -> BoxConfig(font)
+		font_color : BoxConfig, Color -> BoxConfig
 		font_color = |self, color| {
 			text = match self.text {
 				Auto => default_text
@@ -232,7 +232,7 @@ Element := [].{
 			}
 			{ ..self, text: Font({ ..text, color: color }) }
 		}
-		line_height : BoxConfig(font), F32 -> BoxConfig(font)
+		line_height : BoxConfig, F32 -> BoxConfig
 		line_height = |self, line_height| {
 			text = match self.text {
 				Auto => default_text
@@ -240,7 +240,7 @@ Element := [].{
 			}
 			{ ..self, text: Font({ ..text, line_height: line_height }) }
 		}
-		text_align : BoxConfig(font), TextAlign -> BoxConfig(font)
+		text_align : BoxConfig, TextAlign -> BoxConfig
 		text_align = |self, align| {
 			text = match self.text {
 				Auto => default_text
@@ -248,7 +248,7 @@ Element := [].{
 			}
 			{ ..self, text: Font({ ..text, align: align }) }
 		}
-		text_wrap : BoxConfig(font), TextWrap -> BoxConfig(font)
+		text_wrap : BoxConfig, TextWrap -> BoxConfig
 		text_wrap = |self, wrap| {
 			text = match self.text {
 				Auto => default_text
@@ -258,39 +258,39 @@ Element := [].{
 		}
 
 		# Box style
-		background : BoxConfig(font), Color -> BoxConfig(font)
+		background : BoxConfig, Color -> BoxConfig
 		background = |self, color| {
 			{ ..self, background: color }
 		}
 
-		radius : BoxConfig(font), F32 -> BoxConfig(font)
+		radius : BoxConfig, F32 -> BoxConfig
 		radius = |self, radius| {
 			{ ..self, radius: radius }
 		}
 
-		border : BoxConfig(font), BorderConfig -> BoxConfig(font)
+		border : BoxConfig, BorderConfig -> BoxConfig
 		border = |self, border| {
 			{ ..self, border: border }
 		}
 
 		## Set horizontal and vertical overflow behavior.
-		overflow : BoxConfig(font), Overflow, Overflow -> BoxConfig(font)
+		overflow : BoxConfig, Overflow, Overflow -> BoxConfig
 		overflow = |self, x, y| { ..self, overflow: { x, y } }
 
 		## Remove this box from normal flow and attach it as a floating root.
-		floating : BoxConfig(font), Floating -> BoxConfig(font)
+		floating : BoxConfig, Floating -> BoxConfig
 		floating = |self, value| { ..self, floating: value }
 
 	}
 
-	ElementOp(msg, font) : [
-		OpenBox(ElementId, BoxStatus -> BoxConfig(font), List(Event.Handler(msg))),
+	ElementOp(msg) : [
+		OpenBox(ElementId, BoxStatus -> BoxConfig, List(Event.Handler(msg))),
 		CloseBox,
 		Text(Str),
 		Image(Texture),
 	]
 
-	View(msg, font) : Iter(ElementOp(msg, font))
+	View(msg) : Iter(ElementOp(msg))
 
 	default_layout : LayoutConfig
 	default_layout = {
@@ -302,7 +302,7 @@ Element := [].{
 		direction: Row,
 	}
 
-	default_text : TextConfig(font)
+	default_text : TextConfig
 	default_text = { font: InheritFont, font_size: 5, spacing: 1, color: Color.black, line_height: 0, align: Left, wrap: Words }
 
 	default_floating_config : FloatingConfig
@@ -322,19 +322,19 @@ Element := [].{
 		config: { ..default_floating_config, z_index: z, attach_points: points },
 	})
 
-	style : BoxConfig(font)
+	style : BoxConfig
 	style = { layout: Element.default_layout, background: Color.transparent, radius: 0, border: { color: Color.transparent, left: 0, right: 0, top: 0, bottom: 0 }, text: Auto, overflow: { x: Hidden, y: Hidden }, floating: NoFloating }
 
 	## Create a text leaf element.
-	text : Str -> View(msg, font)
+	text : Str -> View(msg)
 	text = |content| [Text(content)].iter()
 
 	## Create a image leaf element.
-	image : Texture -> View(msg, font)
+	image : Texture -> View(msg)
 	image = |texture| [Image(texture)].iter()
 
 	## Create a box container element.
-	box : ElementId, (BoxStatus -> BoxConfig(font)), List(Event.Handler(msg)), List(View(msg, font)) -> View(msg, font)
+	box : ElementId, (BoxStatus -> BoxConfig), List(Event.Handler(msg)), List(View(msg)) -> View(msg)
 	box = |id, style_fn, events, children| {
 		# Wrap children in OpenBox/CloseBox and flatten iterator
 		open = Iter.single(OpenBox(id, style_fn, events))

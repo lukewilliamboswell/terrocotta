@@ -1,16 +1,15 @@
 ## Text wrapping showcase using a font loaded once from a RocRay asset store.
 app [Model, Msg, program] {
 	rr: platform "../../roc-ray/platform/main.roc",
+	rrt: "../../roc-ray/types/main.roc",
 	tc: "../package/main.roc",
-	roc: "nightly-2026-08-21-90da19f",
+	roc: "nightly-2026-08-22-db56022",
 }
 
 import rr.App
-import rr.Assets
-import rr.Draw
+import rrt.Font
 
 import tc.Element exposing [TextWrap.*, View, box, style, text]
-import tc.Font
 import tc.Program
 import tc.Theme
 
@@ -25,7 +24,7 @@ newline_lorem = "Lorem ipsum dolor sit amet.\nInteger non sem vitae lacus.\nDone
 none_lorem : Str
 none_lorem = "Short raw line."
 
-Model : Program.State(AppModel, Msg, Draw.Font)
+Model : Program.State(AppModel, Msg)
 
 AppModel : {}
 
@@ -34,7 +33,7 @@ Msg : [NoOp]
 update : AppModel, Msg -> AppModel
 update = |model, _msg| model
 
-label : Str -> View(Msg, Draw.Font)
+label : Str -> View(Msg)
 label = |content| {
 	box(
 		Auto,
@@ -49,7 +48,7 @@ label = |content| {
 	)
 }
 
-paragraph : TextWrap, Str -> View(Msg, Draw.Font)
+paragraph : TextWrap, Str -> View(Msg)
 paragraph = |wrap_mode, content| {
 	box(
 		Auto,
@@ -64,7 +63,7 @@ paragraph = |wrap_mode, content| {
 	)
 }
 
-panel : Str, TextWrap, Str -> View(Msg, Draw.Font)
+panel : Str, TextWrap, Str -> View(Msg)
 panel = |title, wrap_mode, content| {
 	box(
 		Auto,
@@ -84,7 +83,7 @@ panel = |title, wrap_mode, content| {
 	)
 }
 
-view : AppModel -> View(Msg, Draw.Font)
+view : AppModel -> View(Msg)
 view = |_model| {
 	box(
 		Auto,
@@ -117,14 +116,14 @@ view = |_model| {
 }
 
 configure : List(Str) -> App.Config
-configure = |_args| App.default.with_title("Text Wrap Example").with_size({ width: 800, height: 600 }).with_resizable(Bool.True)
+configure = |_args|
+	App.default
+		.with_title("Text Wrap Example")
+		.with_size({ width: 800, height: 600 })
+		.with_resizable(Bool.True)
+		.with_default_font({ path: "examples/assets/Inter-Regular.ttf", size: 36 })
 
-init! : App.InitCallback({ model : AppModel, font : Font.Handle(Draw.Font) }, _)
-init! = |_startup| {
-	store = Assets.Store.open!(Assets.working_directory("examples/assets"))?
-	ray_font = Draw.load_store_font!(store, { path: "Inter-Regular.ttf", size: 36 })?
-	font = Font.handle(0, ray_font)
-	Ok({ model: {}, font })
-}
+init! : App.InitCallback({ model : AppModel, font : Font }, _)
+init! = |startup| Ok({ model: {}, font: startup.default_font!()? })
 
 program = Program.new(configure, init!, update, view)

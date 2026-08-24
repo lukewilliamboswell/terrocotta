@@ -5,7 +5,6 @@ import Render
 import Element
 import Event
 import Drag
-import Font exposing [Measurable]
 import rrt.Devices
 import rrt.Window
 import rrt.Keys
@@ -45,9 +44,9 @@ default_scroll_state = {
 }
 
 Program :: [].{
-	State(model, msg, font) : {
+	State(model, msg) : {
 		model : model,
-		layout : Layout(font),
+		layout : Layout,
 		event_bindings : EventBindings(msg),
 		hovered : List(U64),
 		focused : U64,
@@ -74,8 +73,7 @@ Program :: [].{
 			})
 		}
 
-		update! : State(model, msg, font), { devices : Devices.Snapshot, window : Window.Snapshot, messages : List(msg), ..input } => Try(State(model, msg, font), [Exit(I64), ..])
-			where [font.Measurable]
+		update! : State(model, msg), { devices : Devices.Snapshot, window : Window.Snapshot, messages : List(msg), ..input } => Try(State(model, msg), [Exit(I64), ..])
 		update! = |state, input| {
 			{ mouse, keys, .. } = input.devices
 			screen = { w: input.window.size.width.to_f32(), h: input.window.size.height.to_f32() }
@@ -84,7 +82,7 @@ Program :: [].{
 			{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, mouse, keys, state.hovered, state.focused, state.drag).map_err(|_| Exit(1))?
 
 			var $model = state.model
-			for message in program_input.messages {
+			for message in input.messages {
 				$model = update($model, message)
 			}
 			for message in event_messages {
@@ -144,7 +142,7 @@ clamp_scroll_axis = |mode, current, content, viewport| {
 
 ## Clamp retained state and apply each wheel axis to the deepest hovered
 ## container that scrolls on that axis.
-update_scroll_containers : Layout(draw), Dict(U64, ScrollState), LayoutTypes.Pos, LayoutTypes.Pos -> Try(Dict(U64, ScrollState), Layout.LayoutError)
+update_scroll_containers : Layout, Dict(U64, ScrollState), LayoutTypes.Pos, LayoutTypes.Pos -> Try(Dict(U64, ScrollState), Layout.LayoutError)
 update_scroll_containers = |layout, scroll, pointer, wheel| {
 	hovered = layout.hover_path(pointer)?
 	containers = layout.scroll_containers()
@@ -220,7 +218,7 @@ get_box_status = |node_index, prev_hovered, focused, mouse| {
 	{ hovered, pressed: hovered and mouse.button_down(Left), focused: node_index == focused, disabled: Bool.False }
 }
 
-handle_events : Layout(draw), EventBindings(msg), Mouse.Snapshot, List(U8), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events : Layout, EventBindings(msg), Mouse.Snapshot, List(U8), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
 handle_events = |layout, event_bindings, mouse, keys, prev_hovered, prev_focused, drag_state| {
 	root_index = 0
 	pointer = mouse.position()
@@ -259,7 +257,7 @@ handle_events = |layout, event_bindings, mouse, keys, prev_hovered, prev_focused
 	Ok({ messages: $msgs, hovered, focused, drag })
 }
 
-pointer_event : Layout(draw), U64, Mouse.Snapshot -> Try(Event.PointerEvent, Layout.LayoutError)
+pointer_event : Layout, U64, Mouse.Snapshot -> Try(Event.PointerEvent, Layout.LayoutError)
 pointer_event = |layout, node_id, mouse| {
 	Ok({
 		position: mouse.position(),
@@ -345,7 +343,7 @@ get_hover_events = |bindings, hovered| {
 		)
 }
 
-get_pointer_events : Layout(draw), EventBindings(msg), List(U64), Mouse.Snapshot -> Try(List(msg), Layout.LayoutError)
+get_pointer_events : Layout, EventBindings(msg), List(U64), Mouse.Snapshot -> Try(List(msg), Layout.LayoutError)
 get_pointer_events = |layout, bindings, hovered, mouse| {
 	var $msgs = []
 	for node_index in hovered {

@@ -6,7 +6,6 @@ package
 		Widget,
 		Event,
 		Element,
-		Font,
 		Layout,
 		Program,
 		Render,
