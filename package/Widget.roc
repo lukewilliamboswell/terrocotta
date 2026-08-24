@@ -134,7 +134,7 @@ Widget := [].{
 					.font_size(theme.font_size)
 					.font_color(colors.content)
 					.radius(theme.radius)
-					.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+					.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 					.gap(theme.gap)
 					.direction(Col)
 					.child_align({ x: Start, y: Start }),
@@ -159,7 +159,7 @@ Widget := [].{
 						.font_size(theme.font_size)
 						.font_color(colors.content)
 						.radius(theme.radius)
-						.pad((theme.gap, theme.gap, theme.gap / 2, theme.gap / 2))
+						.pad(theme.gap / 2, theme.gap, theme.gap / 2, theme.gap)
 						.child_align({ x: Center, y: Center })
 
 					$box_style = if status.focused {
@@ -348,7 +348,7 @@ Widget := [].{
 					.font_size(theme.font_size * 0.85)
 					.font_color(colors.content)
 					.radius(theme.radius)
-					.pad((theme.gap / 2, theme.gap / 2, theme.gap / 4, theme.gap / 4)),
+					.pad(theme.gap / 4, theme.gap / 2, theme.gap / 4, theme.gap / 2),
 			},
 			[
 				text(content),
@@ -497,7 +497,7 @@ Widget := [].{
 						.font_size(theme.font_size)
 						.font_color(theme.palette.background.base.content)
 						.radius(theme.radius)
-						.pad((theme.gap, theme.gap, theme.gap / 2, theme.gap / 2))
+						.pad(theme.gap / 2, theme.gap, theme.gap / 2, theme.gap)
 						.direction(Row)
 						.child_align({ x: Center, y: Center })
 						.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
@@ -780,7 +780,7 @@ select_panel = |theme, select_options| {
 				.font_color(theme.palette.background.base.content)
 				.radius(theme.radius)
 				.border({ color: theme.palette.primary.strong.fill, left: 1, right: 1, top: 1, bottom: 1 })
-			# .pad((theme.gap / 2, theme.gap / 2, theme.gap / 2, theme.gap / 2))
+			# .pad(theme.gap / 2, theme.gap / 2, theme.gap / 2, theme.gap / 2)
 				.direction(Col)
 				.child_align({ x: Start, y: Start })
 				.overflow(Hidden, Hidden)
@@ -849,7 +849,7 @@ select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 					.font_size(theme.font_size)
 					.font_color(content_color)
 					.radius(theme.radius)
-					.pad((theme.gap / 2, theme.gap, theme.gap / 4, theme.gap / 4))
+					.pad(theme.gap / 4, theme.gap, theme.gap / 4, theme.gap / 2)
 
 				if is_selected {
 					$box_style.background(selected_colors.fill)

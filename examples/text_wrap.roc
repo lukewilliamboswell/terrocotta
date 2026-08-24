@@ -80,7 +80,7 @@ panel = |title, wrap_mode, content| {
 				.height(Fit({}))
 				.direction(Col)
 				.gap(theme.gap)
-				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.background(theme.palette.background.weak.fill)
 				.border({ color: theme.palette.primary.base.fill, left: 1, right: 1, top: 1, bottom: 1 })
 				.radius(theme.radius),
@@ -99,7 +99,7 @@ view = |model| {
 			style: |_| style
 				.direction(Col)
 				.gap(theme.gap)
-				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.background(theme.palette.background.base.fill)
 				.font_family(model.font)
 				.font_color(theme.palette.background.base.content)

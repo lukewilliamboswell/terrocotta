@@ -68,7 +68,7 @@ button = |label, msg| {
 			id: Auto,
 			style: |status| style
 				.width(Fit({}))
-				.pad((8, 8, 8, 8))
+				.pad(8, 8, 8, 8)
 				.background(if status.hovered { blue.darken(50) } else { blue })
 				.font_color(white)
 				.font_size(16),

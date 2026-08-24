@@ -1116,7 +1116,7 @@ build_scroll_column : Element.ElementId, LayoutTypes.Pos, Element.Overflow, F32,
 build_scroll_column = |id, offset, overflow_y, viewport_h, child_heights| {
 	root_cfg = fixed_cfg(100, viewport_h)
 		.direction(Col)
-		.pad((3, 7, 5, 11))
+		.pad(5, 7, 11, 3)
 		.gap(4)
 		.overflow(Hidden, overflow_y)
 	var $layout = test_layout()
@@ -1226,7 +1226,7 @@ test_button_cfg = {
 	Element.style
 		.width(Fit({}))
 		.height(Fit({}))
-		.pad((18, 18, 18, 18))
+		.pad(18, 18, 18, 18)
 		.child_align({ x: Center, y: Center })
 		.direction(Row)
 		.font_size(24)
@@ -2192,7 +2192,7 @@ expect {
 		.direction(Row)
 		.child_align({ x: Start, y: Start })
 		.gap(3)
-		.pad((5, 2, 7, 4))
+		.pad(7, 2, 4, 5)
 	child_a = fixed_cfg(10, 10)
 	child_b = fixed_cfg(20, 10)
 

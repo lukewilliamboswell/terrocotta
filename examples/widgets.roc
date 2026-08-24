@@ -102,7 +102,7 @@ view = |model| {
 		{
 			style: |_| style
 				.background(0x242424.Color)
-				.pad((model.theme.gap, model.theme.gap, model.theme.gap, model.theme.gap))
+				.pad(model.theme.gap, model.theme.gap, model.theme.gap, model.theme.gap)
 				.gap(model.theme.gap)
 				.direction(Col)
 				.child_align({ x: Start, y: Start })

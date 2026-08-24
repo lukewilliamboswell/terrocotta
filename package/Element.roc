@@ -183,9 +183,10 @@ Element := [].{
 			{ ..self, layout: { ..self.layout, height: height } }
 		}
 
-		pad : BoxConfig, (F32, F32, F32, F32) -> BoxConfig
-		pad = |self, padding| {
-			{ ..self, layout: { ..self.layout, pad: { left: padding.0, right: padding.1, top: padding.2, bottom: padding.3 } } }
+		## Set padding in CSS order: top, right, bottom, left.
+		pad : BoxConfig, F32, F32, F32, F32 -> BoxConfig
+		pad = |self, top, right, bottom, left| {
+			{ ..self, layout: { ..self.layout, pad: { top, right, bottom, left } } }
 		}
 
 		direction : BoxConfig, Direction -> BoxConfig
@@ -370,6 +371,24 @@ expect {
 			(style_fn(status)).radius == Element.style.radius
 		}
 		_ => Bool.False
+	}
+}
+
+expect {
+	sizing : Element.Sizing
+	sizing = Fit({})
+	match sizing {
+		Fit(bounds) => bounds.min == 0 and bounds.max == 10000
+		_ => False
+	}
+}
+
+expect {
+	sizing : Element.Sizing
+	sizing = Grow({})
+	match sizing {
+		Grow(bounds) => bounds.min == 0 and bounds.max == 10000
+		_ => False
 	}
 }
 

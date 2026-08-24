@@ -30,7 +30,7 @@ row = |index| {
 			id: IdI("scroll-row", index),
 			style: |_| style
 				.height(Fit({}))
-				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.child_align({ x: Start, y: Center })
 				.background(theme.palette.background.weak.fill),
 		},
@@ -47,7 +47,7 @@ view = |_model| {
 			style: |_| style
 				.direction(Col)
 				.child_align({ x: Start, y: Start })
-				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.gap(theme.gap)
 				.background(theme.palette.background.base.fill)
 				.font_family(theme.font)
@@ -63,7 +63,7 @@ view = |_model| {
 						.direction(Col)
 						.child_align({ x: Start, y: Start })
 						.gap(theme.gap)
-						.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+						.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 						.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 })
 						.radius(theme.radius)
 						.overflow(Hidden, Scroll),

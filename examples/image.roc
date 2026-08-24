@@ -76,7 +76,7 @@ view = |model| {
 			style: |_| style
 				.direction(Col)
 				.gap(theme.gap * 2)
-				.pad((theme.gap * 2, theme.gap * 2, theme.gap * 2, theme.gap * 2))
+				.pad(theme.gap * 2, theme.gap * 2, theme.gap * 2, theme.gap * 2)
 				.background(theme.palette.background.base.fill)
 				.font_family(model.font)
 				.font_size(theme.font_size)

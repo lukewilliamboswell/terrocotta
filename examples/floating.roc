@@ -37,7 +37,7 @@ view = |model| {
 			style: |_| style
 				.direction(Col)
 				.child_align({ x: Start, y: Start })
-				.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.gap(theme.gap)
 				.background(theme.palette.background.base.fill)
 				.font_family(theme.font)
@@ -93,7 +93,7 @@ view = |model| {
 							style: |_| style
 								.width(Fit({}))
 								.height(Fit({}))
-								.pad((theme.gap, theme.gap, theme.gap, theme.gap))
+								.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 								.background(theme.palette.primary.base.fill)
 								.font_color(theme.palette.primary.base.content)
 								.font_size(theme.font_size)
