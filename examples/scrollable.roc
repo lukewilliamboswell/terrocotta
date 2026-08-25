@@ -23,13 +23,14 @@ update = |model, _msg| model
 row : U64 -> View(Msg)
 row = |index| {
 	box(
-		IdI("scroll-row", index),
-		|_| style
-			.height(Fit({ min: 0, max: 10000 }))
-			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-			.child_align({ x: Start, y: Center })
-			.background(theme.palette.background.weak.fill),
-		[],
+		{
+			id: IdI("scroll-row", index),
+			style: |_| style
+				.height(Fit({}))
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
+				.child_align({ x: Start, y: Center })
+				.background(theme.palette.background.weak.fill),
+		},
 		[text("Scrollable row ${index.to_str()}")],
 	)
 }
@@ -42,30 +43,33 @@ view = |_model| {
 	}
 	# rows = (1..<20).iter().map(row).collect()
 	box(
-		Id("page"),
-		|_| style
-			.direction(Col)
-			.child_align({ x: Start, y: Start })
-			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-			.gap(theme.gap)
-			.background(theme.palette.background.base.fill)
-			.font_size(theme.font_size)
-			.font_color(theme.palette.background.base.content),
-		[],
+		{
+			id: Id("page"),
+			style: |_| style
+				.direction(Col)
+				.child_align({ x: Start, y: Start })
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
+				.gap(theme.gap)
+				.background(theme.palette.background.base.fill)
+				.font_family(theme.font)
+				.font_size(theme.font_size)
+				.font_color(theme.palette.background.base.content),
+		},
 		[
 			text("Move the pointer over the panel and use the mouse wheel."),
 			box(
-				Id("scroll-container"),
-				|_| style
-					.direction(Col)
-					.child_align({ x: Start, y: Start })
-					.gap(theme.gap)
-					.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-					.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 })
-					.radius(theme.radius)
-					.overflow(Hidden, Scroll),
-				[],
-				$rows,
+				{
+					id: Id("scroll-container"),
+					style: |_| style
+						.direction(Col)
+						.child_align({ x: Start, y: Start })
+						.gap(theme.gap)
+						.pad(theme.gap, theme.gap, theme.gap, theme.gap)
+						.border({ color: theme.palette.primary.base.fill, left: 2, right: 2, top: 2, bottom: 2 })
+						.radius(theme.radius)
+						.overflow(Hidden, Scroll),
+				},
+				rows,
 			),
 		],
 	)

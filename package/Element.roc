@@ -9,9 +9,9 @@ Element := [].{
 
 	Sizing : [
 		# Size to content, clamped to min/max pixels.
-		Fit({ min : F32, max : F32 }),
+		Fit({ min : F32 ?? 0, max : F32 ?? 10000 }),
 		# Fill available space, clamped to min/max pixels.
-		Grow({ min : F32, max : F32 }),
+		Grow({ min : F32 ?? 0, max : F32 ?? 10000 }),
 		# Use an exact size in pixels.
 		Fixed(F32),
 		# Use a fraction of the parent's available size.
@@ -179,9 +179,10 @@ Element := [].{
 			{ ..self, layout: { ..self.layout, height: height } }
 		}
 
-		pad : BoxConfig, (F32, F32, F32, F32) -> BoxConfig
-		pad = |self, padding| {
-			{ ..self, layout: { ..self.layout, pad: { left: padding.0, right: padding.1, top: padding.2, bottom: padding.3 } } }
+		## Set padding in CSS order: top, right, bottom, left.
+		pad : BoxConfig, F32, F32, F32, F32 -> BoxConfig
+		pad = |self, top, right, bottom, left| {
+			{ ..self, layout: { ..self.layout, pad: { top, right, bottom, left } } }
 		}
 
 		direction : BoxConfig, Direction -> BoxConfig
@@ -292,10 +293,18 @@ Element := [].{
 
 	View(msg) : Iter(ElementOp(msg))
 
+	## Attributes attached to a box. Omitted attributes use the standard box
+	## identity, style, and event behavior.
+	BoxAttr(msg) : {
+		id : ElementId ?? Auto,
+		style ?: BoxStatus -> BoxConfig,
+		events ?: List(Event.Handler(msg)),
+	}
+
 	default_layout : LayoutConfig
 	default_layout = {
-		width: Grow({ min: 0, max: 10000 }),
-		height: Grow({ min: 0, max: 10000 }),
+		width: Grow({}),
+		height: Grow({}),
 		pad: { left: 0, right: 0, top: 0, bottom: 0 },
 		gap: 0,
 		child_align: { x: Center, y: Center },
@@ -334,10 +343,13 @@ Element := [].{
 	image = |texture| [Image(texture)].iter()
 
 	## Create a box container element.
-	box : ElementId, (BoxStatus -> BoxConfig), List(Event.Handler(msg)), List(View(msg)) -> View(msg)
-	box = |id, style_fn, events, children| {
+	box : BoxAttr(msg), List(View(msg)) -> View(msg)
+	box = |attr, children| {
+		style_fn = attr.?style ?? |_| style
+		events = attr.?events ?? []
+
 		# Wrap children in OpenBox/CloseBox and flatten iterator
-		open = Iter.single(OpenBox(id, style_fn, events))
+		open = Iter.single(OpenBox(attr.id, style_fn, events))
 		view = children.fold(open, |acc, child| acc.concat(child))
 		view.append(CloseBox)
 	}
@@ -345,28 +357,62 @@ Element := [].{
 
 expect {
 	view = Element.box(
-		Auto,
-		|_status| Element.style,
-		[],
+		{},
 		[],
 	)
 
 	match view.collect() {
-		[OpenBox(Auto, _, []), CloseBox] => Bool.True
+		[OpenBox(Auto, style_fn, []), CloseBox] => {
+			status = { hovered: False, pressed: False, focused: False, disabled: False }
+			(style_fn(status)).radius == Element.style.radius
+		}
+		_ => Bool.False
+	}
+}
+
+expect {
+	sizing : Element.Sizing
+	sizing = Fit({})
+	match sizing {
+		Fit(bounds) => bounds.min == 0 and bounds.max == 10000
+		_ => False
+	}
+}
+
+expect {
+	sizing : Element.Sizing
+	sizing = Grow({})
+	match sizing {
+		Grow(bounds) => bounds.min == 0 and bounds.max == 10000
+		_ => False
+	}
+}
+
+expect {
+	view = Element.box(
+		{
+			events: [OnClick("save")],
+			id: Id("button"),
+			style: |_| Element.style.radius(7),
+		},
+		[],
+	)
+
+	match view.collect() {
+		[OpenBox(Id("button"), style_fn, [OnClick("save")]), CloseBox] => {
+			status = { hovered: False, pressed: False, focused: False, disabled: False }
+			(style_fn(status)).radius == 7
+		}
 		_ => Bool.False
 	}
 }
 
 expect {
 	view = Element.box(
-		Auto,
-		|_status| Element.style,
-		[],
+		{},
 		[
 			Element.box(
-				Auto,
-				|_status| Element.style,
-				[],
+				{},
 				[
 					Element.text("hello"),
 				],

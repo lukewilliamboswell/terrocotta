@@ -514,7 +514,7 @@ test_intrinsic_size = |direction| {
 		.height(Fit({ min: 0, max: 1000 }))
 		.direction(direction)
 		.gap(6)
-		.pad((3, 4, 5, 7))
+		.pad(5, 4, 7, 3)
 	parent = test_box_with_layout(1, NoParent, 0, 2, { w: 0, h: 0 }, cfg.layout)
 	child_a = test_fixed_box(2, Parent(0), 10, 20)
 	child_b = test_fixed_box(3, Parent(0), 15, 30)
@@ -560,14 +560,14 @@ test_grow_distribution = |direction| {
 			.direction(Row)
 			.child_align({ x: Start, y: Start })
 			.gap(5)
-			.pad((10, 10, 0, 0))
+			.pad(0, 10, 0, 10)
 		Col => Element.style
 			.width(Fixed(40))
 			.height(Fixed(120))
 			.direction(Col)
 			.child_align({ x: Start, y: Start })
 			.gap(5)
-			.pad((0, 0, 10, 10))
+			.pad(10, 0, 10, 0)
 	}
 	root = test_box_with_layout(1, NoParent, 0, 3, { w: 0, h: 0 }, root_cfg.layout)
 	fixed = match direction {
@@ -645,7 +645,7 @@ expect {
 		.height(Fixed(50))
 		.direction(Row)
 		.child_align({ x: Center, y: Start })
-		.pad((5, 5, 3, 7))
+		.pad(3, 5, 7, 5)
 	child = test_box(2, Parent(0), 0, 0, { w: 20, h: 0 }, Fixed(20), Grow({ min: 0, max: 1000 }))
 	root = test_box_with_layout(1, NoParent, 0, 1, { w: 0, h: 0 }, root_cfg.layout)
 
@@ -667,13 +667,13 @@ expect {
 		.direction(Row)
 		.child_align({ x: Start, y: Start })
 		.gap(4)
-		.pad((10, 10, 5, 5))
+		.pad(5, 10, 5, 10)
 	nested_cfg = Element.style
 		.width(Percent(0.5))
 		.height(Grow({ min: 0, max: 1000 }))
 		.direction(Col)
 		.child_align({ x: End, y: Start })
-		.pad((2, 3, 4, 5))
+		.pad(4, 3, 5, 2)
 	root = test_box_with_layout(1, NoParent, 1, 2, { w: 0, h: 0 }, root_cfg.layout)
 	nested = test_box_with_layout(2, Parent(0), 0, 1, { w: 0, h: 0 }, nested_cfg.layout)
 	leaf = test_fixed_box(3, Parent(1), 20, 10)
@@ -713,14 +713,14 @@ test_mixed_sizing = |direction| {
 			.direction(Row)
 			.child_align({ x: Start, y: Start })
 			.gap(5)
-			.pad((10, 10, 0, 0))
+			.pad(0, 10, 0, 10)
 		Col => Element.style
 			.width(Fixed(60))
 			.height(Fixed(240))
 			.direction(Col)
 			.child_align({ x: Start, y: Start })
 			.gap(5)
-			.pad((0, 0, 10, 10))
+			.pad(10, 0, 10, 0)
 	}
 	root = test_box_with_layout(1, NoParent, 0, 4, { w: 0, h: 0 }, root_cfg.layout)
 	fixed = match direction {

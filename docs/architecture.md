@@ -67,9 +67,9 @@ can produce an application message:
 ```roc
 view : Model -> View(Message)
 view = |model|
-    box(Auto, |_| container_style, [], [
+    box({ style: |_| container_style }, [
         text(model.count.to_str()),
-        box(Id("increment"), |_| button_style, [OnClick(Increment)], [
+        box({ id: Id("increment"), style: |_| button_style, events: [OnClick(Increment)] }, [
             text("+"),
         ]),
     ])

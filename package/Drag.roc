@@ -215,14 +215,14 @@ Drag := [].{
 ## path for a press at 97, 30 (inside the root, outside the children).
 drag_test_scene = || {
 	view = Element.box(
-		Auto,
-		|_| Element.style.width(Fixed(100)).height(Fixed(60)).child_align({ x: Start, y: Start }),
-		[],
+		{
+			style: |_| Element.style.width(Fixed(100)).height(Fixed(60)).child_align({ x: Start, y: Start }),
+		},
 		[
 			Element.box(
-				Auto,
-				|_| Element.style.width(Fixed(90)).height(Fixed(20)),
-				[],
+				{
+					style: |_| Element.style.width(Fixed(90)).height(Fixed(20)),
+				},
 				[],
 			),
 		],

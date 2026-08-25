@@ -100,15 +100,16 @@ theme_card = |theme, name, model| {
 view : AppModel -> View(Msg)
 view = |model| {
 	box(
-		Auto,
-		|_| style
-			.background(0x242424.Color)
-			.pad((model.theme.gap, model.theme.gap, model.theme.gap, model.theme.gap))
-			.gap(model.theme.gap)
-			.direction(Col)
-			.child_align({ x: Start, y: Start })
-			.font_size(model.theme.font_size),
-		[],
+		{
+			style: |_| style
+				.background(0x242424.Color)
+				.pad(model.theme.gap, model.theme.gap, model.theme.gap, model.theme.gap)
+				.gap(model.theme.gap)
+				.direction(Col)
+				.child_align({ x: Start, y: Start })
+				.font_family(model.font)
+				.font_size(model.theme.font_size),
+		},
 		[
 			theme_card(model.theme, "Widget Demo", model),
 		],

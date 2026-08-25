@@ -34,14 +34,14 @@ update = |model, _msg| model
 label : Str -> View(Msg)
 label = |content| {
 	box(
-		Auto,
-		|_| style
-			.height(Fit({ min: 0, max: 10000 }))
-			.child_align({ x: Start, y: Start })
-			.font_color(theme.palette.primary.strong.fill)
-			.font_size(theme.font_size)
-			.text_wrap(None),
-		[],
+		{
+			style: |_| style
+				.height(Fit({}))
+				.child_align({ x: Start, y: Start })
+				.font_color(theme.palette.primary.strong.fill)
+				.font_size(theme.font_size)
+				.text_wrap(None),
+		},
 		[text(content)],
 	)
 }
@@ -49,14 +49,14 @@ label = |content| {
 paragraph : TextWrap, Str -> View(Msg)
 paragraph = |wrap_mode, content| {
 	box(
-		Auto,
-		|_| style
-			.height(Fit({ min: 0, max: 10000 }))
-			.child_align({ x: Start, y: Start })
-			.font_color(theme.palette.background.base.content)
-			.font_size(theme.font_size)
-			.text_wrap(wrap_mode),
-		[],
+		{
+			style: |_| style
+				.height(Fit({}))
+				.child_align({ x: Start, y: Start })
+				.font_color(theme.palette.background.base.content)
+				.font_size(theme.font_size)
+				.text_wrap(wrap_mode),
+		},
 		[text(content)],
 	)
 }
@@ -64,16 +64,16 @@ paragraph = |wrap_mode, content| {
 panel : Str, TextWrap, Str -> View(Msg)
 panel = |title, wrap_mode, content| {
 	box(
-		Auto,
-		|_| style
-			.height(Fit({ min: 0, max: 10000 }))
-			.direction(Col)
-			.gap(theme.gap)
-			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-			.background(theme.palette.background.weak.fill)
-			.border({ color: theme.palette.primary.base.fill, left: 1, right: 1, top: 1, bottom: 1 })
-			.radius(theme.radius),
-		[],
+		{
+			style: |_| style
+				.height(Fit({}))
+				.direction(Col)
+				.gap(theme.gap)
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
+				.background(theme.palette.background.weak.fill)
+				.border({ color: theme.palette.primary.base.fill, left: 1, right: 1, top: 1, bottom: 1 })
+				.radius(theme.radius),
+		},
 		[
 			label(title),
 			paragraph(wrap_mode, content),
@@ -84,25 +84,26 @@ panel = |title, wrap_mode, content| {
 view : AppModel -> View(Msg)
 view = |_model| {
 	box(
-		Auto,
-		|_| style
-			.direction(Col)
-			.gap(theme.gap)
-			.pad((theme.gap, theme.gap, theme.gap, theme.gap))
-			.background(theme.palette.background.base.fill)
-			.font_color(theme.palette.background.base.content)
-			.font_size(theme.font_size),
-		[],
+		{
+			style: |_| style
+				.direction(Col)
+				.gap(theme.gap)
+				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
+				.background(theme.palette.background.base.fill)
+				.font_family(model.font)
+				.font_color(theme.palette.background.base.content)
+				.font_size(theme.font_size),
+		},
 		[
 			label("Text wrapping"),
 			paragraph(None, "Same lorem ipsum copy rendered with Words, Newlines, and None wrap modes."),
 			box(
-				Auto,
-				|_| style
-					.direction(Row)
-					.child_align({ x: Start, y: Start })
-					.gap(theme.gap),
-				[],
+				{
+					style: |_| style
+						.direction(Row)
+						.child_align({ x: Start, y: Start })
+						.gap(theme.gap),
+				},
 				[
 					panel("Words", Words, lorem),
 					panel("Newlines", Newlines, newline_lorem),

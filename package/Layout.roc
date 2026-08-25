@@ -719,8 +719,8 @@ add_image = |layout, id, texture| {
 		content_size: measured,
 		scroll_offset: { x: 0, y: 0 },
 		position: { x: 0, y: 0 },
-		sizing_w: Grow({ min: 0, max: 10000 }),
-		sizing_h: Grow({ min: 0, max: 10000 }),
+		sizing_w: Grow({}),
+		sizing_h: Grow({}),
 		placement: Normal,
 	}
 	layout_with_id = register_node_id(layout, id, idx)?
@@ -1110,7 +1110,7 @@ build_scroll_column : Element.ElementId, LayoutTypes.Pos, Element.Overflow, F32,
 build_scroll_column = |id, offset, overflow_y, viewport_h, child_heights| {
 	root_cfg = fixed_cfg(100, viewport_h)
 		.direction(Col)
-		.pad((3, 7, 5, 11))
+		.pad(5, 7, 11, 3)
 		.gap(4)
 		.overflow(Hidden, overflow_y)
 	var $layout = Layout.test_layout()
@@ -1206,7 +1206,7 @@ test_text_cfg : Element.TextWrap -> Element.BoxConfig
 test_text_cfg = |wrap| {
 	Element.style
 		.width(Fixed(4))
-		.height(Fit({ min: 0, max: 10000 }))
+		.height(Fit({}))
 		.direction(Col)
 		.child_align({ x: Start, y: Start })
 		.font_size(10)
@@ -1218,9 +1218,9 @@ test_text_cfg = |wrap| {
 test_button_cfg : Element.BoxConfig
 test_button_cfg = {
 	Element.style
-		.width(Fit({ min: 0, max: 10000 }))
-		.height(Fit({ min: 0, max: 10000 }))
-		.pad((18, 18, 18, 18))
+		.width(Fit({}))
+		.height(Fit({}))
+		.pad(18, 18, 18, 18)
 		.child_align({ x: Center, y: Center })
 		.direction(Row)
 		.font_size(24)
@@ -1230,7 +1230,7 @@ test_align_text_cfg : Element.TextAlign -> Element.BoxConfig
 test_align_text_cfg = |align| {
 	Element.style
 		.width(Fixed(10))
-		.height(Fit({ min: 0, max: 10000 }))
+		.height(Fit({}))
 		.direction(Col)
 		.child_align({ x: Start, y: Start })
 		.font_size(10)
@@ -1378,7 +1378,7 @@ build_nested_fit_text_layout : Element.BoxConfig, Str, F32, List(Text.Word), Siz
 build_nested_fit_text_layout = |root_cfg, content, preferred_w, words, screen| {
 	var $layout = Layout.test_layout()
 	$layout = open_box($layout, Auto, root_cfg)?
-	$layout = open_box($layout, Auto, Element.style.width(Fit({ min: 0, max: 10000 })).height(Fit({ min: 0, max: 10000 })).direction(Col).child_align({ x: Start, y: Start }))?
+	$layout = open_box($layout, Auto, Element.style.width(Fit({})).height(Fit({})).direction(Col).child_align({ x: Start, y: Start }))?
 	$layout = add_test_text($layout, content, preferred_w, words)?
 	$layout = close_box($layout)?
 	$layout = close_box($layout)?
@@ -2212,7 +2212,7 @@ expect {
 		.direction(Row)
 		.child_align({ x: Start, y: Start })
 		.gap(3)
-		.pad((5, 2, 7, 4))
+		.pad(7, 2, 4, 5)
 	child_a = fixed_cfg(10, 10)
 	child_b = fixed_cfg(20, 10)
 
