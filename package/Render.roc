@@ -117,7 +117,7 @@ Render := [].{
 		where [
 			frame.rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
 			frame.rounded_rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
-			frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : Font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
+			frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : Font } => {},
 			frame.texture! : frame, TextureDraw => {},
 			frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 		]
@@ -133,7 +133,7 @@ draw_region! : frame, List(Render.Command), [NoScissor, Scissor(RenderRect)] => 
 	where [
 		frame.rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
 		frame.rounded_rectangle! : frame, { x : F32, y : F32, width : F32, height : F32, radius : F32, segments : I32, style : { fill : [NoFill, Fill(Color.Rgba)], stroke : [NoStroke, Stroke({ color : Color.Rgba, thickness : F32 })] } } => {},
-		frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : Font, align : { horizontal : [Left, Center, Right], vertical : [Top, Middle, Bottom] } } => {},
+		frame.text! : frame, { pos : { x : F32, y : F32 }, text : Str, size : F32, spacing : F32, color : Color.Rgba, font : Font } => {},
 		frame.texture! : frame, TextureDraw => {},
 		frame.with_scissor! : frame, { x : F32, y : F32, width : F32, height : F32 }, (frame => Try({}, [ScopeLimit, ..errors])) => Try({}, [ScopeLimit, ..errors]),
 	]
@@ -227,7 +227,6 @@ draw_region! = |frame, commands, scissor| {
 						spacing: t.spacing,
 						color: Color.to_rrt(t.color),
 						font: t.font,
-						align: { horizontal: Left, vertical: Top },
 					})
 					draw_region!(frame, rest, scissor)
 				}
