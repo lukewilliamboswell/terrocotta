@@ -1,6 +1,6 @@
 ## Text wrapping showcase using a font loaded once from a RocRay asset store.
 app [Model, Msg, program] {
-	rr: platform "../../roc-ray/platform/main.roc",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
 	tc: "../package/main.roc",
 	roc: "nightly-2026-08-23-fb208ba",
 }

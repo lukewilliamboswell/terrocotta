@@ -1,14 +1,12 @@
 ## Renders an image centered in a box with interactive width and height controls.
 app [Model, Msg, program] {
-	rr: platform "../../roc-ray/platform/main.roc",
-	rrt: "../../roc-ray/types/main.roc",
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
 	tc: "../package/main.roc",
 	roc: "nightly-2026-08-23-fb208ba",
 }
 
 import rr.App
 import rr.Assets
-import rrt.Texture
 
 import tc.Element exposing [View, box, image, style]
 import tc.Program
@@ -34,7 +32,7 @@ index_to_sizing = |index| match index {
 Model : Program.State(AppModel, Msg)
 
 AppModel : {
-	texture : Texture,
+	texture : Assets.Texture,
 	select_width : { open : Bool, selected : U64 },
 	select_height : { open : Bool, selected : U64 },
 }
