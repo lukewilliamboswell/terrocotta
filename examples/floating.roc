@@ -1,13 +1,12 @@
 ## Minimal floating-root demonstration.
-app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+app [Model, Msg, program] {
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-23-fb208ba",
 }
 
-import rr.Host
-import rr.Draw
+import rr.App
 
-import tc.Color
 import tc.Element exposing [box, text, View, style, default_floating_config]
 import tc.Widget exposing [column, row, button]
 import tc.Program
@@ -15,14 +14,11 @@ import tc.Theme
 
 theme = Theme.light
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
 AppModel : { attach : Element.AttachPoint }
 
 Msg : Element.AttachPoint
-
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| Ok({ attach: Center })
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| {
@@ -117,13 +113,10 @@ view = |model| {
 	)
 }
 
-program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: { ..Program.default, title: "Floating Root", width: 720, height: 520 },
-	init!,
-	view,
-	update,
-})
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Floating Root").with_size({ width: 720, height: 520 })
+
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| Ok({ attach: Center })
+
+program = Program.new(configure, init!, update, view)

@@ -1,21 +1,27 @@
 ## Minimal counter with increment and decrement buttons.
+<<<<<<< HEAD
+app [Model, Msg, program] {
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
+	tc: "../package/main.roc",
+	roc: "nightly-2026-08-23-fb208ba",
+=======
 app [Model, program] {
 	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
 	tc: "../package/main.roc",
+>>>>>>> main
 }
 
-import rr.Host
-import rr.Draw
+import rr.App
+# import rr.Keys
 
-import tc.Color
-import tc.Element exposing [box, text, View, style, default_font]
+import tc.Element exposing [box, text, View, style]
 import tc.Program
 import tc.Theme
 import tc.Widget exposing [button]
 
 theme = Theme.dark
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
 AppModel : {
 	count : I32,
@@ -26,8 +32,11 @@ Msg : [
 	Increment,
 ]
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| Ok({ count: 0 })
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Counter Example").with_size({ width: 640, height: 420 })
+
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| Ok({ count: 0 })
 
 update : AppModel, Msg -> AppModel
 update = |model, msg| match msg {
@@ -64,13 +73,4 @@ view = |model| {
 	)
 }
 
-program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: { ..Program.default, title: "Counter Example", width: 640, height: 420 },
-	init!,
-	view,
-	update,
-})
+program = Program.new(configure, init!, update, view)

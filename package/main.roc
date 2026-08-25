@@ -1,6 +1,5 @@
 package
 	[
-		Assets,
 		Color,
 		Palette,
 		Theme,
@@ -12,4 +11,6 @@ package
 		Render,
 		TextMeasureCache,
 	]
-	{}
+	{
+		rrt: "../../roc-ray/types/main.roc",
+	}

@@ -1,8 +1,17 @@
 ## Text measurement and wrapping helpers for layout.
 import Element
-import Render
+import Color
+import rrt.Font as RrtFont
 
 Text := [].{
+	Config : {
+		font_size : F32,
+		spacing : F32,
+		color : Color,
+		line_height : F32,
+		align : Element.TextAlign,
+		wrap : Element.TextWrap,
+	}
 	Word : {
 		start : U64,
 		len : U64,
@@ -37,11 +46,9 @@ Text := [].{
 		contains_newlines : Bool,
 	}
 
-	MeasureTextFn : { text : Str, size : F32, spacing : F32, font : U64 } => Render.TextSize
-
-	measure! : Str, Element.TextConfig, MeasureTextFn => Measured
-	measure! = |content, config, measure_text!| {
-		measured = measure_canonical!(content, config, measure_text!)
+	measure : Str, Config, RrtFont -> Measured
+	measure = |content, config, font| {
+		measured = measure_canonical(content, config, font)
 		line_h = apply_line_height(config, measured.natural_line_height)
 		lines = wrap(content, config, measured.space_width, line_h, measured.preferred_width, measured.words)
 		preferred_w = Text.wrapped_width(lines)
@@ -63,19 +70,19 @@ Text := [].{
 		}
 	}
 
-	measure_canonical! : Str, Element.TextConfig, MeasureTextFn => CanonicalMeasured
-	measure_canonical! = |content, config, measure_text!| {
-		space_raw = measure_raw!(measure_text!, config, " ")
+	measure_canonical : Str, Config, RrtFont -> CanonicalMeasured
+	measure_canonical = |content, config, font| {
+		space_raw = measure_raw(font, config, " ")
 		space_width = space_raw.width
-		measure_words!(content, config, space_width, measure_text!)
+		measure_words(content, config, space_width, font)
 	}
 
-	apply_line_height : Element.TextConfig, F32 -> F32
+	apply_line_height : Config, F32 -> F32
 	apply_line_height = |config, natural_line_height| {
 		if config.line_height > 0 config.line_height else natural_line_height
 	}
 
-	wrap : Str, Element.TextConfig, F32, F32, F32, List(Word) -> List(Line)
+	wrap : Str, Config, F32, F32, F32, List(Word) -> List(Line)
 	wrap = |content, config, space_width, line_h, width, words| {
 		match config.wrap {
 			Words => wrap_words(width, words, content, space_width, line_h)
@@ -108,20 +115,22 @@ Text := [].{
 	}
 }
 
-measure_raw! : Text.MeasureTextFn, Element.TextConfig, Str => Render.TextSize
-measure_raw! = |measure_text!, config, content| {
-	measure_text!({
-		text: content,
-		size: config.font_size,
-		spacing: config.spacing,
-		font: Box.unbox(config.font),
-	})
+measure_raw : RrtFont, Text.Config, Str -> RrtFont.Size
+measure_raw = |font, config, content| {
+	RrtFont.measure(
+		font,
+		{
+			text: content,
+			size: config.font_size,
+			spacing: config.spacing,
+		},
+	)
 }
 
-measure_line_height! : Str, Element.TextConfig, Text.MeasureTextFn => F32
-measure_line_height! = |content, config, measure_text!| {
+measure_line_height : Str, Text.Config, RrtFont -> F32
+measure_line_height = |content, config, font| {
 	sample = if bytes_len(content) > 0 "M" else " "
-	(measure_raw!(measure_text!, config, sample)).height
+	(measure_raw(font, config, sample)).height
 }
 
 bytes_len : Str -> U64
@@ -136,10 +145,10 @@ slice = |content, start, len| {
 max_f32 : F32, F32 -> F32
 max_f32 = |a, b| if a > b a else b
 
-measure_run! : Str, U64, U64, F32, U64, Element.TextConfig, Text.MeasureTextFn => { word : Text.Word, trimmed_width : F32 }
-measure_run! = |content, start, len, extra_width, trailing_len, config, measure_text!| {
+measure_run : Str, U64, U64, F32, U64, Text.Config, RrtFont -> { word : Text.Word, trimmed_width : F32 }
+measure_run = |content, start, len, extra_width, trailing_len, config, font| {
 	text = slice(content, start, len)
-	raw = measure_raw!(measure_text!, config, text)
+	raw = measure_raw(font, config, text)
 	width = raw.width + extra_width
 	{ word: { start, len: len + trailing_len, width, is_newline: Bool.False }, trimmed_width: raw.width }
 }
@@ -147,10 +156,10 @@ measure_run! = |content, start, len, extra_width, trailing_len, config, measure_
 newline_word : U64 -> Text.Word
 newline_word = |start| { start, len: 1, width: 0, is_newline: Bool.True }
 
-measure_words! : Str, Element.TextConfig, F32, Text.MeasureTextFn => Text.CanonicalMeasured
-measure_words! = |content, config, space_width, measure_text!| {
+measure_words : Str, Text.Config, F32, RrtFont -> Text.CanonicalMeasured
+measure_words = |content, config, space_width, font| {
 	bytes = content.to_utf8()
-	line_h = measure_line_height!(content, config, measure_text!)
+	line_h = measure_line_height(content, config, font)
 	var $words = []
 	var $preferred_w = 0
 	var $current_w = 0
@@ -163,7 +172,7 @@ measure_words! = |content, config, space_width, measure_text!| {
 		if byte == 32 {
 			len = i - $start
 			if len > 0 {
-				measured = measure_run!(content, $start, len, space_width, 1, config, measure_text!)
+				measured = measure_run(content, $start, len, space_width, 1, config, font)
 				$words = $words.append(measured.word)
 				$current_w = $current_w + measured.word.width
 				$min_width = max_f32($min_width, measured.trimmed_width)
@@ -172,7 +181,7 @@ measure_words! = |content, config, space_width, measure_text!| {
 		} else if byte == 10 {
 			len = i - $start
 			if len > 0 {
-				measured = measure_run!(content, $start, len, 0, 0, config, measure_text!)
+				measured = measure_run(content, $start, len, 0, 0, config, font)
 				$words = $words.append(measured.word)
 				$current_w = $current_w + measured.word.width
 				$min_width = max_f32($min_width, measured.trimmed_width)
@@ -187,7 +196,7 @@ measure_words! = |content, config, space_width, measure_text!| {
 
 	len = bytes.len() - $start
 	if len > 0 {
-		measured = measure_run!(content, $start, len, 0, 0, config, measure_text!)
+		measured = measure_run(content, $start, len, 0, 0, config, font)
 		$words = $words.append(measured.word)
 		$current_w = $current_w + measured.word.width
 		$min_width = max_f32($min_width, measured.trimmed_width)
@@ -307,8 +316,8 @@ wrap_words = |width, words, content, space_width, line_h| {
 
 ## TESTS ##
 
-test_config : Element.TextWrap -> Element.TextConfig
-test_config = |wrap| { ..Element.default_text, line_height: 10, wrap }
+test_config : Element.TextWrap -> Text.Config
+test_config = |wrap| { font_size: 5, spacing: 1, color: Color.black, line_height: 10, align: Left, wrap }
 
 test_word : U64, U64, F32 -> Text.Word
 test_word = |start, len, width| { start, len, width, is_newline: Bool.False }

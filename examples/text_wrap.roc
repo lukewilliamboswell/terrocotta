@@ -1,20 +1,17 @@
-## Text wrapping showcase with lorem ipsum paragraphs.
-app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+## Text wrapping showcase using a font loaded once from a RocRay asset store.
+app [Model, Msg, program] {
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-23-fb208ba",
 }
 
-import rr.Host
-import rr.Draw
-import tc.Color
-import tc.Element exposing [Font, TextWrap.*, View, box, default_font, style, text]
+import rr.App
+
+import tc.Element exposing [TextWrap.*, View, box, style, text]
 import tc.Program
 import tc.Theme
 
 theme = Theme.light
-
-font_path : Str
-font_path = "examples/assets/Inter-Regular.ttf"
 
 lorem : Str
 lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer non sem vitae lacus gravida facilisis. Donec porttitor, justo sed luctus feugiat, nibh lorem malesuada enim, sed pulvinar erat lectus id massa."
@@ -25,19 +22,11 @@ newline_lorem = "Lorem ipsum dolor sit amet.\nInteger non sem vitae lacus.\nDone
 none_lorem : Str
 none_lorem = "Short raw line."
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
-AppModel : {
-	font : Font,
-}
+AppModel : {}
 
 Msg : [NoOp]
-
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| {
-	font = Draw.load_font!({ path: font_path, size: 2 * 18 }).map_err(|_| Exit(1))?
-	Ok({ font: font })
-}
 
 update : AppModel, Msg -> AppModel
 update = |model, _msg| model
@@ -57,7 +46,7 @@ label = |content| {
 	)
 }
 
-paragraph : Element.TextWrap, Str -> View(Msg)
+paragraph : TextWrap, Str -> View(Msg)
 paragraph = |wrap_mode, content| {
 	box(
 		{
@@ -72,7 +61,7 @@ paragraph = |wrap_mode, content| {
 	)
 }
 
-panel : Str, Element.TextWrap, Str -> View(Msg)
+panel : Str, TextWrap, Str -> View(Msg)
 panel = |title, wrap_mode, content| {
 	box(
 		{
@@ -93,7 +82,7 @@ panel = |title, wrap_mode, content| {
 }
 
 view : AppModel -> View(Msg)
-view = |model| {
+view = |_model| {
 	box(
 		{
 			style: |_| style
@@ -125,13 +114,15 @@ view = |model| {
 	)
 }
 
-program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: { ..Program.default, title: "Text Wrap Example", width: 800, height: 600, resizable: Bool.True },
-	init!,
-	view,
-	update,
-})
+configure : List(Str) -> App.Config
+configure = |_args|
+	App.default
+		.with_title("Text Wrap Example")
+		.with_size({ width: 800, height: 600 })
+		.with_resizable(Bool.True)
+		.with_default_font({ path: "examples/assets/Inter-Regular.ttf", size: 36 })
+
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| Ok({})
+
+program = Program.new(configure, init!, update, view)

@@ -1,11 +1,11 @@
 ## Scrollable list demonstration.
-app [Model, program] {
-	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst",
+app [Model, Msg, program] {
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
 	tc: "../package/main.roc",
+	roc: "nightly-2026-08-23-fb208ba",
 }
 
-import rr.Host
-import rr.Draw
+import rr.App
 
 import tc.Element exposing [box, text, View, style]
 import tc.Program
@@ -13,12 +13,9 @@ import tc.Theme
 
 theme = Theme.light
 
-Model : Program.State(Draw, {}, Msg)
+Model : Program.State({}, Msg)
 
 Msg : []
-
-init! : Program.Config => Try({}, [Exit(I64)])
-init! = |_config| Ok({})
 
 update : {}, Msg -> {}
 update = |model, _msg| model
@@ -40,7 +37,11 @@ row = |index| {
 
 view : {} -> View(Msg)
 view = |_model| {
-	rows = (1..<20).map(row).collect()
+	var $rows = []
+	for index in 1..<20 {
+		$rows = $rows.append(row(index))
+	}
+	# rows = (1..<20).iter().map(row).collect()
 	box(
 		{
 			id: Id("page"),
@@ -74,13 +75,10 @@ view = |_model| {
 	)
 }
 
-program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
-}
-program = Program.new!({
-	config: { ..Program.default, title: "Scrollable Container", width: 720, height: 520 },
-	init!,
-	view,
-	update,
-})
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Scrollable Container").with_size({ width: 720, height: 520 })
+
+init! : App.InitCallback({}, [])
+init! = |_startup| Ok({})
+
+program = Program.new(configure, init!, update, view)

@@ -3,6 +3,8 @@
 ## Channels are 8-bit sRGB values.
 ## Alpha is 0 for transparent and 255 for fully opaque.
 ## Aligned with raylib RGBA semantic.
+import rrt.Color as RrtColor
+
 Color := {
 
 	## Red channel.
@@ -17,8 +19,15 @@ Color := {
 	## Alpha channel.
 	a : U8,
 }.{
+	## RocRay's shared render-boundary color type.
+	Rgba : RrtColor.Rgba
+
 	is_eq : Color, Color -> Bool
 	is_eq = |a, b| a.r == b.r and a.g == b.g and a.b == b.b and a.a == b.a
+
+	## Convert Terrocotta's color to the shared RocRay drawing color.
+	to_rrt : Color -> Rgba
+	to_rrt = |color| RrtColor.rgba(color.r, color.g, color.b, color.a)
 
 	## Construct a color from red, green, blue, and alpha channels.
 	rgba : U8, U8, U8, U8 -> Color

@@ -1,23 +1,24 @@
 ## Example showcasing theme-aware widgets.
-app [Model, program] { rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.8.3/E6ZmC6ZncTVFG875Xsf6jP2GuZCtLnncQ1YwVwKtT2J4.tar.zst", tc: "../package/main.roc" }
+app [Model, Msg, program] {
+	rr: platform "https://github.com/lukewilliamboswell/roc-ray/releases/download/0.10.0-rc3/3vVeddfDE6rraq5j8v1cGHtFNaQhC6dij1zGRN63NGP1.tar.zst",
+	tc: "../package/main.roc",
+	roc: "nightly-2026-08-23-fb208ba",
+}
 
-import rr.Host
-import rr.Draw
+import rr.App
 import tc.Color
-import tc.Element exposing [Font, View, box, style]
-import tc.Layout
+import tc.Element exposing [View, box, style]
 import tc.Program
-import tc.Render
 import tc.Theme
 import tc.Widget
 
-Model : Program.State(Draw, AppModel, Msg)
+Model : Program.State(AppModel, Msg)
 
-AppModel : { theme : Theme, font : Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
+AppModel : { theme : Theme, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
 
 Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool)]
 
-theme_card : Theme, Str, AppModel -> View
+theme_card : Theme, Str, AppModel -> View(Msg)
 theme_card = |theme, name, model| {
 	Widget.panel(
 		theme,
@@ -96,7 +97,7 @@ theme_card = |theme, name, model| {
 	)
 }
 
-view : AppModel -> View
+view : AppModel -> View(Msg)
 view = |model| {
 	box(
 		{
@@ -126,19 +127,19 @@ update = |model, msg| {
 	}
 }
 
-font_path : Str
-font_path = "examples/assets/Inter-Regular.ttf"
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })
 
-init! : Program.Config => Try(AppModel, [Exit(I64)])
-init! = |_config| Ok({ theme: Theme.dark, font: Draw.load_font!({ path: font_path, size: 2 * 16 }).map_err(|_| Exit(1))?, slider_value: 45, select_open: False, select_selected: 0, toggle_on: False })
-
-program : {
-	init! : { config : Program.Config, run! : Host => Try(Model, [Exit(I64)]) },
-	render! : Model, Host => Try(Model, [Exit(I64), ..]),
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| {
+	model = {
+		theme: Theme.dark,
+		slider_value: 45,
+		select_open: False,
+		select_selected: 0,
+		toggle_on: False,
+	}
+	Ok(model)
 }
-program = Program.new!({
-	config: { ..Program.default, title: "Widget Theme Showcase", width: 900, height: 520 },
-	init!,
-	view,
-	update,
-})
+
+program = Program.new(configure, init!, update, view)

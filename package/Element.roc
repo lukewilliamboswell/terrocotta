@@ -1,15 +1,11 @@
 ## UI types and helpers for the Roc-Clay layout engine.
 ## Provides text, box, and stack for building view trees as Iter(UIMessage).
 import Color
-import Assets
 import Event
+import rrt.Font
+import rrt.Texture
 
 Element := [].{
-
-	Font : Box(U64)
-
-	default_font : Font
-	default_font = Box.box(0)
 
 	Sizing : [
 		# Size to content, clamped to min/max pixels.
@@ -147,7 +143,7 @@ Element := [].{
 
 	TextConfig : {
 		# Text font.
-		font : Font,
+		font : [InheritFont, FontHandle(Font)],
 		# Text font size (in px).
 		font_size : F32,
 		# Space between glyphs (in px).
@@ -211,7 +207,7 @@ Element := [].{
 				Auto => default_text
 				Font(cfg) => cfg
 			}
-			{ ..self, text: Font({ ..text, font: font }) }
+			{ ..self, text: Font({ ..text, font: FontHandle(font) }) }
 		}
 		font_size : BoxConfig, F32 -> BoxConfig
 		font_size = |self, size| {
@@ -292,7 +288,7 @@ Element := [].{
 		OpenBox(ElementId, BoxStatus -> BoxConfig, List(Event.Handler(msg))),
 		CloseBox,
 		Text(Str),
-		Image(Assets.Texture),
+		Image(Texture),
 	]
 
 	View(msg) : Iter(ElementOp(msg))
@@ -316,7 +312,7 @@ Element := [].{
 	}
 
 	default_text : TextConfig
-	default_text = { font: default_font, font_size: 5, spacing: 1, color: Color.black, line_height: 0, align: Left, wrap: Words }
+	default_text = { font: InheritFont, font_size: 5, spacing: 1, color: Color.black, line_height: 0, align: Left, wrap: Words }
 
 	default_floating_config : FloatingConfig
 	default_floating_config = {
@@ -343,7 +339,7 @@ Element := [].{
 	text = |content| [Text(content)].iter()
 
 	## Create a image leaf element.
-	image : Assets.Texture -> View(msg)
+	image : Texture -> View(msg)
 	image = |texture| [Image(texture)].iter()
 
 	## Create a box container element.

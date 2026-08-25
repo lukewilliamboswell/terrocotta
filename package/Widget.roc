@@ -45,7 +45,6 @@ Widget := [].{
 							.width(Fit({ min: 0, max: 600 }))
 							.height(Fit({}))
 							.background(dialog_colors.fill)
-							.font_family(theme.font)
 							.font_size(theme.font_size)
 							.font_color(dialog_colors.content)
 							.radius(theme.radius)
@@ -58,7 +57,7 @@ Widget := [].{
 	}
 
 	## Display body text using the theme background content color.
-	label : Theme, Str -> View
+	label : Theme, Str -> View(msg)
 	label = |theme, content| {
 		box(
 			{
@@ -73,7 +72,7 @@ Widget := [].{
 	}
 
 	## Display larger heading text using the theme primary color.
-	heading : Theme, Str -> View
+	heading : Theme, Str -> View(msg)
 	heading = |theme, content| {
 		box(
 			{
@@ -88,7 +87,7 @@ Widget := [].{
 	}
 
 	## Lay out children horizontally with the theme gap.
-	row : Theme, List(View) -> View
+	row : Theme, List(View(msg)) -> View(msg)
 	row = |theme, children| {
 		box(
 			{
@@ -104,7 +103,7 @@ Widget := [].{
 	}
 
 	## Lay out children vertically with the theme gap.
-	column : Theme, List(View) -> View
+	column : Theme, List(View(msg)) -> View(msg)
 	column = |theme, children| {
 		box(
 			{
@@ -120,7 +119,7 @@ Widget := [].{
 	}
 
 	## Group children on a weak background surface.
-	panel : Theme, List(View) -> View
+	panel : Theme, List(View(msg)) -> View(msg)
 	panel = |theme, children| {
 		colors = theme.palette.background.weak
 
@@ -130,7 +129,6 @@ Widget := [].{
 					.width(Fit({}))
 					.height(Fit({}))
 					.background(colors.fill)
-					.font_family(theme.font)
 					.font_size(theme.font_size)
 					.font_color(colors.content)
 					.radius(theme.radius)
@@ -144,7 +142,7 @@ Widget := [].{
 	}
 
 	## Display a button-shaped command label with hover, press, and focus styling.
-	button : Theme, Variant, Str, List(Event.Handler) -> View
+	button : Theme, Variant, Str, List(Event.Handler(msg)) -> View(msg)
 	button = |theme, variant, content, events| {
 		colors = role_pair(theme, variant)
 
@@ -155,7 +153,6 @@ Widget := [].{
 						.width(Fit({}))
 						.height(Fit({}))
 						.background(colors.fill)
-						.font_family(theme.font)
 						.font_size(theme.font_size)
 						.font_color(colors.content)
 						.radius(theme.radius)
@@ -205,7 +202,6 @@ Widget := [].{
 					var $box_style = style
 						.width(Fit({}))
 						.height(Fit({}))
-						.font_family(theme.font)
 						.font_size(theme.font_size)
 						.font_color(theme.palette.background.base.content)
 						.direction(Row)
@@ -334,7 +330,7 @@ Widget := [].{
 	}
 
 	## Display a compact semantic label.
-	badge : Theme, Variant, Str -> View
+	badge : Theme, Variant, Str -> View(msg)
 	badge = |theme, variant, content| {
 		colors = role_pair(theme, variant)
 
@@ -344,7 +340,6 @@ Widget := [].{
 					.width(Fit({}))
 					.height(Fit({}))
 					.background(colors.fill)
-					.font_family(theme.font)
 					.font_size(theme.font_size * 0.85)
 					.font_color(colors.content)
 					.radius(theme.radius)
@@ -493,7 +488,6 @@ Widget := [].{
 						.width(Grow({ min: theme.font_size * 6, max: 10000 }))
 						.height(Fit({}))
 						.background(trigger_colors.fill)
-						.font_family(theme.font)
 						.font_size(theme.font_size)
 						.font_color(theme.palette.background.base.content)
 						.radius(theme.radius)
@@ -759,9 +753,8 @@ role_pair = |theme, variant| {
 
 ## Base text style shared by themed text widgets.
 text_style : Theme, F32, Pair -> Element.BoxConfig
-text_style = |theme, size, colors| {
+text_style = |_theme, size, colors| {
 	style
-		.font_family(theme.font)
 		.font_size(size)
 		.font_color(colors.content)
 }
@@ -775,7 +768,6 @@ select_panel = |theme, select_options| {
 				.width(Grow({}))
 				.height(Fit({}))
 				.background(theme.palette.background.base.fill)
-				.font_family(theme.font)
 				.font_size(theme.font_size)
 				.font_color(theme.palette.background.base.content)
 				.radius(theme.radius)
@@ -845,7 +837,6 @@ select_option = |theme, label, index, is_selected, on_select, on_toggle_open| {
 				var $box_style = style
 					.width(Grow({}))
 					.height(Fit({}))
-					.font_family(theme.font)
 					.font_size(theme.font_size)
 					.font_color(content_color)
 					.radius(theme.radius)

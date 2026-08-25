@@ -1,8 +1,10 @@
 ## Shared layout geometry and flat tree data types.
-import Assets
 import Color
 import Element
 import Identity exposing [NodeId]
+import Text
+import rrt.Font
+import rrt.Texture
 
 LayoutTypes := [].{
 
@@ -98,7 +100,8 @@ LayoutTypes := [].{
 
 	TextNodeData : {
 		content_index : U64,
-		config : Element.TextConfig,
+		font : Font,
+		config : Text.Config,
 		line_height : F32,
 		wrap_width : F32,
 		min_width : F32,
@@ -107,7 +110,7 @@ LayoutTypes := [].{
 	}
 
 	ImageNodeData : {
-		texture : Assets.Texture,
+		texture : Texture,
 	}
 
 	LayoutNodeKind : [BoxNode(BoxNodeData), TextNode(TextNodeData), ImageNode(ImageNodeData)]

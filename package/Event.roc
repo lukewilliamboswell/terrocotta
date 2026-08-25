@@ -1,4 +1,6 @@
 ## Pointer and UI event types used by Element views and Program dispatch.
+import rrt.Keys
+import rrt.Mouse
 
 Event := [].{
 	Point : {
@@ -33,21 +35,9 @@ Event := [].{
 		bounds : ElementBounds,
 	}
 
-	PointerButtonState : {
-		down : Bool,
-		pressed : Bool,
-		released : Bool,
-	}
-
-	PointerButtons : {
-		left : PointerButtonState,
-		middle : PointerButtonState,
-		right : PointerButtonState,
-	}
-
 	PointerEvent : {
 		position : Point,
-		buttons : PointerButtons,
+		mouse : Mouse.Snapshot,
 		target : EventTarget,
 	}
 
@@ -65,11 +55,14 @@ Event := [].{
 		OnPointer(Box(PointerEvent -> List(msg))),
 		OnPointerEnter(msg),
 		OnPointerLeave(msg),
+		OnPointerPressed(Mouse.Button, msg),
+		OnPointerDown(Mouse.Button, msg),
+		OnPointerReleased(Mouse.Button, msg),
 		OnDragStart(Box(DragEvent -> List(msg))),
 		OnDragMove(Box(DragEvent -> List(msg))),
 		OnDragEnd(Box(DragEvent -> List(msg))),
-		OnKeyPressed(U64, msg),
-		OnKeyDown(U64, msg),
-		OnKeyUp(U64, msg),
+		OnKeyPressed(Keys.Key, msg),
+		OnKeyDown(Keys.Key, msg),
+		OnKeyReleased(Keys.Key, msg),
 	]
 }
