@@ -95,7 +95,7 @@ text_before_cursor = |value, pos| {
 update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
 update = |state, event| {
 	var $value = state.value
-	var $cursor = GraphemeCursor.new($value, state.cursor.min(GraphemeCursor.count($value)))
+	var $cursor = GraphemeCursor.new($value, state.cursor)
 	for key in event.keys {
 		($value, $cursor) = match key {
 			KeyLeft => ($value, $cursor.previous())
