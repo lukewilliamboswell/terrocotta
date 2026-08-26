@@ -79,11 +79,11 @@ Program :: [].{
 
 		update! : State(model, msg), { devices : Devices.Snapshot, window : Window.Snapshot, messages : List(msg), ..input } => Try(State(model, msg), [Exit(I64), ..])
 		update! = |state, input| {
-			{ mouse, keys, .. } = input.devices
+			{ mouse, .. } = input.devices
 			screen = { w: input.window.size.width.to_f32(), h: input.window.size.height.to_f32() }
 
 			scroll = update_scroll_containers(state.layout, state.scroll, mouse.position(), mouse.wheel_delta()).map_err(|_| Exit(1))?
-			{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, mouse, keys, state.hovered, state.focused, state.drag).map_err(|_| Exit(1))?
+			{ messages: event_messages, hovered, focused, drag } = handle_events(state.layout, state.event_bindings, input.devices, state.hovered, state.focused, state.drag).map_err(|_| Exit(1))?
 
 			var $model = state.model
 			for message in input.messages {
@@ -222,8 +222,10 @@ get_box_status = |node_index, prev_hovered, focused, mouse| {
 	{ hovered, pressed: hovered and mouse.button_down(Left), focused: node_index == focused, disabled: Bool.False }
 }
 
-handle_events : Layout, EventBindings(msg), Mouse.Snapshot, List(U8), List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
-handle_events = |layout, event_bindings, mouse, keys, prev_hovered, prev_focused, drag_state| {
+handle_events : Layout, EventBindings(msg), Devices.Snapshot, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
+handle_events = |layout, event_bindings, devices, prev_hovered, prev_focused, prev_drag| {
+    { mouse, keys, text_input, .. } = devices
+
 	root_index = 0
 	pointer = mouse.position()
 	hovered = layout.hover_path(pointer)?
@@ -246,19 +248,38 @@ handle_events = |layout, event_bindings, mouse, keys, prev_hovered, prev_focused
 	}
 
 	focused = if mouse.button_pressed(Left) {
-		hovered.get(0).ok_or(root_index)
+		focus_target(event_bindings, hovered, root_index)
 	} else {
 		prev_focused
 	}
 
 	# Key events
 	$msgs = $msgs.concat(get_key_events(event_bindings, focused, keys))
+	$msgs = $msgs.concat(get_text_input_events(event_bindings, focused, text_input))
 
 	# Drag gestures
-	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, drag_state, mouse)?
+	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, prev_drag, mouse)?
 	$msgs = $msgs.concat(drag_msgs)
 
 	Ok({ messages: $msgs, hovered, focused, drag })
+}
+
+## Pick the deepest hovered node that is focusable (aka has key event bindings).
+focus_target : EventBindings(msg), List(U64), U64 -> U64
+focus_target = |bindings, hovered, root_index| {
+	is_focusable = |event| match event {
+		OnKeyPressed(_, _) | OnKeyDown(_, _) | OnKeyReleased(_, _) | OnTextInput(_) => Bool.True
+		_ => Bool.False
+	}
+	hovered
+		.find_last(
+			|node_id|
+				bindings
+					.get(node_id)
+					.ok_or([])
+					.fold(Bool.False, |focusable, event| focusable or is_focusable(event)),
+		)
+		.ok_or(root_index)
 }
 
 pointer_event : Layout, U64, Mouse.Snapshot -> Try(Event.PointerEvent, Layout.LayoutError)
@@ -438,6 +459,27 @@ get_key_events = |bindings, focused, keys| {
 		)
 }
 
+get_text_input_events : EventBindings(msg), U64, List(U32) -> List(msg)
+get_text_input_events = |bindings, focused, codepoints| {
+	if codepoints.is_empty() {
+		[]
+	} else {
+		bindings
+			.get(focused)
+			.ok_or([])
+			.iter()
+			.fold(
+				[],
+				|msgs, binding| {
+					match binding {
+						OnTextInput(callback) => msgs.append((Box.unbox(callback))({ codepoints, editing_keys: [] }))
+						_ => msgs
+					}
+				},
+			)
+	}
+}
+
 expect {
 	bindings =
 		Dict.empty()
@@ -509,6 +551,17 @@ expect {
 		],
 	)
 	get_key_events(bindings, 1, [7]) == ["pressed", "down", "released"]
+}
+
+## Committed text is batched once for the focused text-input handler.
+expect {
+	bindings = Dict.empty().insert(
+		1,
+		[OnTextInput(Box.box(|event| event.codepoints))],
+	)
+	get_text_input_events(bindings, 1, [0xE9, 0x1F426]) == [[0xE9, 0x1F426]]
+		and get_text_input_events(bindings, 1, []) == []
+			and get_text_input_events(bindings, 2, [65]) == []
 }
 
 pointer_button_test_mouse : Mouse.Snapshot

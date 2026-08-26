@@ -2,10 +2,16 @@
 import Color
 import Element exposing [View, box, text, style]
 import Event
+import widgets/InputText as InputText
 import Theme
 import Utils
 
 Widget := [].{
+
+	## Model-owned value and UTF-8 byte cursor for a controlled text input.
+	TextInputState := { value : Str, cursor : U64 }.{
+		is_eq : _
+	}
 
 	## Semantic widget color variants.
 	Variant : [Primary, Secondary, Success, Warning, Danger]
@@ -85,6 +91,8 @@ Widget := [].{
 			],
 		)
 	}
+
+	input_text = InputText.input_text
 
 	## Lay out children horizontally with the theme gap.
 	row : Theme, List(View(msg)) -> View(msg)
