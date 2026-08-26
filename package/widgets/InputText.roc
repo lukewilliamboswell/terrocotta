@@ -3,9 +3,7 @@ import ../Color
 import ../Element exposing [View, box, text, style]
 import ../Event
 import ../Theme
-import unicode.ByteRange
-import unicode.GeneralCategory
-import unicode.Scalar
+import ../Unicode exposing [TextCursor, codepoints_to_str]
 
 InputText :: [].{
 	input_text : Theme,
@@ -53,146 +51,82 @@ InputText :: [].{
 			[text(content)],
 		)
 	}
+
+	## Update controlled input state from one text-input event.
+	update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
+	update = |state, event| update_text_input(state, event)
 }
 
-
 ## Update input text state.
-update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
-update = |state, event| {
-	var $next = normalize_state(state)
+update_text_input : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
+update_text_input = |state, event| {
+	var $value = state.value
+	var $cursor = TextCursor.at($value, state.cursor)
 	for key in event.keys {
-		$next = match key {
-			KeyLeft => move_cursor_left($next)
-			KeyRight => move_cursor_right($next)
-			KeyHome => { ..$next, cursor: 0 }
-			KeyEnd => { ..$next, cursor: $next.value.count_utf8_bytes() }
-			KeyBackspace => backspace($next)
-			KeyDelete => delete($next)
+		$value, $cursor = match key {
+			KeyLeft => ($value, $cursor.previous())
+			KeyRight => ($value, $cursor.next())
+			KeyHome => ($value, $cursor.start())
+			KeyEnd => ($value, $cursor.end())
+			KeyBackspace => backspace($value, $cursor)
+			KeyDelete => delete($value, $cursor)
 		}
 	}
 
 	appended = codepoints_to_str(event.codepoints)
-	$next = if appended.is_empty() $next else insert_text($next, appended)
-	$next
-}
-
-## Normalize the cursor to a valid UTF-8 scalar boundary.
-normalize_state : { value : Str, cursor : U64 } -> { value : Str, cursor : U64 }
-normalize_state = |state| {
-	{ ..state, cursor: normalize_scalar_boundary(state.value, state.cursor) }
-}
-
-## Move the cursor to the previous Unicode scalar boundary.
-move_cursor_left = |state| {
-	{ ..state, cursor: previous_scalar_boundary(state.value, state.cursor) }
-}
-
-## Move the cursor to the next Unicode scalar boundary.
-move_cursor_right = |state| {
-	{ ..state, cursor: next_scalar_boundary(state.value, state.cursor) }
-}
-
-## Clamp a byte offset and move it backward to a Unicode scalar boundary.
-normalize_scalar_boundary : Str, U64 -> U64
-normalize_scalar_boundary = |value, cursor| {
-	clamped = cursor.min(value.count_utf8_bytes())
-	var $boundary = 0
-	for located in Scalar.iter(value) {
-		start = ByteRange.start(located.byte_range)
-		end = ByteRange.end(located.byte_range)
-		if end <= clamped {
-			$boundary = end
-		} else if start < clamped {
-			$boundary = start
-		}
+	if !appended.is_empty() {
+		result = insert_text($value, $cursor, appended)
+		$value = result.value
+		$cursor = result.cursor
 	}
-	$boundary
+	{ value: $value, cursor: $cursor.byte_offset() }
 }
 
-## Return the Unicode scalar boundary immediately before the cursor.
-previous_scalar_boundary = |value, cursor| {
-	normalized = normalize_scalar_boundary(value, cursor)
-	var $previous = 0
-	for located in Scalar.iter(value) {
-		if ByteRange.end(located.byte_range) <= normalized {
-			$previous = ByteRange.start(located.byte_range)
-		}
-	}
-	$previous
-}
-
-## Return the Unicode scalar boundary immediately after the cursor.
-next_scalar_boundary = |value, cursor| {
-	normalized = normalize_scalar_boundary(value, cursor)
-	var $next = normalized
-	for located in Scalar.iter(value) {
-		if ByteRange.start(located.byte_range) == normalized {
-			$next = ByteRange.end(located.byte_range)
-		}
-	}
-	$next
-}
-
-## Remove a byte range and place the cursor at the requested offset.
-remove_bytes = |state, start, end, next_cursor| {
-	bytes = state.value.to_utf8()
+## Remove a byte range from a string.
+remove_bytes : Str, U64, U64 -> Str
+remove_bytes = |value, start, end| {
+	bytes = value.to_utf8()
 	before = bytes.sublist({ start: 0, len: start })
 	after = bytes.sublist({ start: end, len: bytes.len() - end })
-	{ value: Str.from_utf8_lossy(before.concat(after)), cursor: next_cursor }
+	Str.from_utf8_lossy(before.concat(after))
 }
 
 ## Remove the Unicode scalar immediately before the cursor.
-backspace = |state| {
-	if state.cursor == 0 {
-		state
+backspace : Str, TextCursor -> (Str, TextCursor)
+backspace = |value, cursor| {
+	if cursor.byte_offset() == 0 {
+		(value, cursor)
 	} else {
-		previous = previous_scalar_boundary(state.value, state.cursor)
-		remove_bytes(state, previous, state.cursor, previous)
+		start = cursor.previous().byte_offset()
+		end = cursor.byte_offset()
+		next_value = remove_bytes(value, start, end)
+		(next_value, TextCursor.at(next_value, start))
 	}
 }
 
 ## Remove the Unicode scalar immediately after the cursor.
-delete = |state| {
-	bytes = state.value.to_utf8()
-	if state.cursor >= bytes.len() {
-		state
+delete : Str, TextCursor -> (Str, TextCursor)
+delete = |value, cursor| {
+	if cursor.byte_offset() >= value.count_utf8_bytes() {
+		(value, cursor)
 	} else {
-		next = next_scalar_boundary(state.value, state.cursor)
-		remove_bytes(state, state.cursor, next, state.cursor)
+		start = cursor.byte_offset()
+		end = cursor.next().byte_offset()
+		next_value = remove_bytes(value, start, end)
+		(next_value, TextCursor.at(next_value, start))
 	}
 }
 
 ## Insert text at the cursor and advance it by the inserted UTF-8 byte length.
-insert_text = |state, inserted| {
-	bytes = state.value.to_utf8()
+insert_text = |value, cursor, inserted| {
+	bytes = value.to_utf8()
 	inserted_bytes = inserted.to_utf8()
-	before = bytes.sublist({ start: 0, len: state.cursor })
-	after = bytes.sublist({ start: state.cursor, len: bytes.len() - state.cursor })
-	{
-		value: Str.from_utf8_lossy(before.concat(inserted_bytes).concat(after)),
-		cursor: state.cursor + inserted_bytes.len(),
-	}
+	offset = cursor.byte_offset()
+	before = bytes.sublist({ start: 0, len: offset })
+	after = bytes.sublist({ start: offset, len: bytes.len() - offset })
+	next_value = Str.from_utf8_lossy(before.concat(inserted_bytes).concat(after))
+	{ value: next_value, cursor: TextCursor.at(next_value, offset + inserted_bytes.len()) }
 }
-
-codepoints_to_str : List(U32) -> Str
-codepoints_to_str = |codepoints| codepoints.fold(
-	"",
-	|current, codepoint| {
-		match Scalar.from_u32(codepoint) {
-			Ok(scalar) => {
-				if GeneralCategory.of_scalar(scalar) != Cc {
-					match scalar.to_str() {
-						Ok(value) => current.concat(value)
-						Err(_) => current
-					}
-				} else {
-					current
-				}
-			}
-			Err(_) => current
-		}
-	},
-)
 
 text_input_event : List(U32), List(Event.TextControlKey) -> Event.TextInputEvent
 text_input_event = |codepoints, keys| { codepoints, keys }
