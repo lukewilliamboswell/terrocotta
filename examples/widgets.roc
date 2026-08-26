@@ -14,9 +14,25 @@ import tc.Widget
 
 Model : Program.State(AppModel, Msg)
 
-AppModel : { theme : Theme, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool }
+AppModel : { theme : Theme, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool, name : { value : Str, cursor : U64 } }
 
-Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool)]
+Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool), NameChanged(Widget.TextInputState)]
+
+configure : List(Str) -> App.Config
+configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 500 }).with_resizable(True)
+
+init! : App.InitCallback(AppModel, [])
+init! = |_startup| {
+	model = {
+		theme: Theme.dark,
+		slider_value: 45,
+		select_open: False,
+		select_selected: 0,
+		toggle_on: False,
+		name: { value: "", cursor: 0 },
+	}
+	Ok(model)
+}
 
 theme_card : Theme, Str, AppModel -> View(Msg)
 theme_card = |theme, name, model| {
@@ -93,6 +109,16 @@ theme_card = |theme, name, model| {
 					on_select: |index| SelectOption(index),
 				},
 			),
+			Widget.label(theme, "Text input: ${model.name.value}"),
+			Widget.input_text(
+				theme,
+				{
+					id: Id("name"),
+					state: model.name,
+					placeholder: "Name",
+					on_change: |state| NameChanged(state),
+				},
+			),
 		],
 	)
 }
@@ -107,7 +133,6 @@ view = |model| {
 				.gap(model.theme.gap)
 				.direction(Col)
 				.child_align({ x: Start, y: Start })
-				.font_family(model.font)
 				.font_size(model.theme.font_size),
 		},
 		[
@@ -124,22 +149,8 @@ update = |model, msg| {
 		ToggleSelect(open) => { ..model, select_open: open }
 		SelectOption(index) => { ..model, select_open: False, select_selected: index }
 		SetToggle(on) => { ..model, toggle_on: on }
+		NameChanged(name) => { ..model, name }
 	}
-}
-
-configure : List(Str) -> App.Config
-configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 420 })
-
-init! : App.InitCallback(AppModel, [])
-init! = |_startup| {
-	model = {
-		theme: Theme.dark,
-		slider_value: 45,
-		select_open: False,
-		select_selected: 0,
-		toggle_on: False,
-	}
-	Ok(model)
 }
 
 program = Program.new(configure, init!, update, view)

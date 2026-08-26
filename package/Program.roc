@@ -224,7 +224,7 @@ get_box_status = |node_index, prev_hovered, focused, mouse| {
 
 handle_events : Layout, EventBindings(msg), Devices.Snapshot, List(U64), U64, Drag.DragState -> Try({ messages : List(msg), hovered : List(U64), focused : U64, drag : Drag.DragState }, Layout.LayoutError)
 handle_events = |layout, event_bindings, devices, prev_hovered, prev_focused, prev_drag| {
-    { mouse, keys, text_input, .. } = devices
+	{ mouse, keys, text_input, .. } = devices
 
 	root_index = 0
 	pointer = mouse.position()
@@ -255,7 +255,7 @@ handle_events = |layout, event_bindings, devices, prev_hovered, prev_focused, pr
 
 	# Key events
 	$msgs = $msgs.concat(get_key_events(event_bindings, focused, keys))
-	$msgs = $msgs.concat(get_text_input_events(event_bindings, focused, text_input))
+	$msgs = $msgs.concat(get_text_input_events(event_bindings, focused, keys, text_input))
 
 	# Drag gestures
 	{ drag, messages: drag_msgs } = Drag.advance(layout, event_bindings, hovered, prev_drag, mouse)?
@@ -459,9 +459,64 @@ get_key_events = |bindings, focused, keys| {
 		)
 }
 
-get_text_input_events : EventBindings(msg), U64, List(U32) -> List(msg)
-get_text_input_events = |bindings, focused, codepoints| {
-	if codepoints.is_empty() {
+get_text_control_keys : List(U8) -> List(Event.TextControlKey)
+get_text_control_keys = |keys| {
+	var $control_keys = []
+	if Keys.key_pressed(
+		{
+			keys: keys,
+		},
+		KeyLeft,
+	) {
+		$control_keys = $control_keys.append(KeyLeft)
+	}
+	if Keys.key_pressed(
+		{
+			keys: keys,
+		},
+		KeyRight,
+	) {
+		$control_keys = $control_keys.append(KeyRight)
+	}
+	if Keys.key_pressed(
+		{
+			keys: keys,
+		},
+		KeyHome,
+	) {
+		$control_keys = $control_keys.append(KeyHome)
+	}
+	if Keys.key_pressed(
+		{
+			keys: keys,
+		},
+		KeyEnd,
+	) {
+		$control_keys = $control_keys.append(KeyEnd)
+	}
+	if Keys.key_pressed(
+		{
+			keys: keys,
+		},
+		KeyBackspace,
+	) {
+		$control_keys = $control_keys.append(KeyBackspace)
+	}
+	if Keys.key_pressed(
+		{
+			keys: keys,
+		},
+		KeyDelete,
+	) {
+		$control_keys = $control_keys.append(KeyDelete)
+	}
+	$control_keys
+}
+
+get_text_input_events : EventBindings(msg), U64, List(U8), List(U32) -> List(msg)
+get_text_input_events = |bindings, focused, key_states, codepoints| {
+	control_keys = get_text_control_keys(key_states)
+	if codepoints.is_empty() and control_keys.is_empty() {
 		[]
 	} else {
 		bindings
@@ -472,7 +527,7 @@ get_text_input_events = |bindings, focused, codepoints| {
 				[],
 				|msgs, binding| {
 					match binding {
-						OnTextInput(callback) => msgs.append((Box.unbox(callback))({ codepoints, editing_keys: [] }))
+						OnTextInput(callback) => msgs.append((Box.unbox(callback))({ codepoints, keys: control_keys }))
 						_ => msgs
 					}
 				},
@@ -557,11 +612,13 @@ expect {
 expect {
 	bindings = Dict.empty().insert(
 		1,
-		[OnTextInput(Box.box(|event| event.codepoints))],
+		[OnTextInput(Box.box(|event| event))],
 	)
-	get_text_input_events(bindings, 1, [0xE9, 0x1F426]) == [[0xE9, 0x1F426]]
-		and get_text_input_events(bindings, 1, []) == []
-			and get_text_input_events(bindings, 2, [65]) == []
+	key_states = Devices.none.with_key_pressed(KeyLeft).with_key_pressed(KeyBackspace).keys
+	get_text_input_events(bindings, 1, [], [0xE9, 0x1F426]) == [{ codepoints: [0xE9, 0x1F426], keys: [] }]
+		and get_text_input_events(bindings, 1, key_states, []) == [{ codepoints: [], keys: [KeyLeft, KeyBackspace] }]
+			and get_text_input_events(bindings, 1, [], []) == []
+				and get_text_input_events(bindings, 2, [], [65]) == []
 }
 
 pointer_button_test_mouse : Mouse.Snapshot
