@@ -86,16 +86,16 @@ InputText :: [].{
 
 ## Return the text before a normalized cursor.
 text_before_cursor : Str, U64 -> Str
-text_before_cursor = |value, byte_offset| {
-    # cursor = ScalarCursor.at(value, byte_offset)
-	Str.from_utf8_lossy(value.to_utf8().sublist({ start: 0, len: byte_offset }))
+text_before_cursor = |value, pos| {
+	cursor = ScalarCursor.at(value, pos)
+	Str.from_utf8_lossy(value.to_utf8().sublist({ start: 0, len: cursor.byte_offset() }))
 }
 
 ## Update input text state.
 update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
 update = |state, event| {
 	var $value = state.value
-	var $cursor = ScalarCursor.at($value, state.cursor)
+	var $cursor = ScalarCursor.at($value, state.cursor.min(ScalarCursor.count($value)))
 	for key in event.keys {
 		($value, $cursor) = match key {
 			KeyLeft => ($value, $cursor.previous())
@@ -110,7 +110,7 @@ update = |state, event| {
 	event_text = codepoints_to_str(event.codepoints)
 	($value, $cursor) = insert_text($value, $cursor, event_text)
 
-	{ value: $value, cursor: $cursor.byte_offset() }
+	{ value: $value, cursor: $cursor.position() }
 }
 
 ## Remove a byte range from a string.
@@ -131,7 +131,7 @@ remove_before = |value, cursor| {
 		start = cursor.previous().byte_offset()
 		end = cursor.byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, ScalarCursor.at(next_value, start))
+		(next_value, ScalarCursor.at(next_value, cursor.position() - 1))
 	}
 }
 
@@ -144,11 +144,11 @@ remove_after = |value, cursor| {
 		start = cursor.byte_offset()
 		end = cursor.next().byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, ScalarCursor.at(next_value, start))
+		(next_value, ScalarCursor.at(next_value, cursor.position()))
 	}
 }
 
-## Insert text at the cursor and advance it by the inserted UTF-8 byte length.
+## Insert text at the cursor and advance it by the inserted scalar count.
 insert_text : Str, ScalarCursor, Str -> (Str, ScalarCursor)
 insert_text = |value, cursor, content| {
 	if content.is_empty() {
@@ -160,7 +160,7 @@ insert_text = |value, cursor, content| {
 		before = bytes.sublist({ start: 0, len: offset })
 		after = bytes.sublist({ start: offset, len: bytes.len() - offset })
 		next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
-		(next_value, ScalarCursor.at(next_value, offset + content_bytes.len()))
+		(next_value, ScalarCursor.at(next_value, cursor.position() + ScalarCursor.count(content)))
 	}
 }
 
@@ -175,42 +175,42 @@ expect {
 		{ value: "ab", cursor: 1 },
 		text_input_event([0xE9, 0x1F426, 99], []),
 	)
-	state_is(next, "aé🐦cb", 8)
+	state_is(next, "aé🐦cb", 4)
 }
 
 ## Movement crosses Unicode scalar boundaries rather than individual bytes.
 expect {
-	state = { value: "aé🐦", cursor: 7 }
+	state = { value: "aé🐦", cursor: 2 }
 	left = update(state, text_input_event([], [KeyLeft]))
 	right = update(left, text_input_event([], [KeyRight]))
-	state_is(left, "aé🐦", 3) and state_is(right, "aé🐦", 7)
+	state_is(left, "aé🐦", 1) and state_is(right, "aé🐦", 2)
 }
 
 ## Backspace and Delete remove exactly one adjacent scalar.
 expect {
 	backspaced = update(
-		{ value: "aé🐦b", cursor: 7 },
+		{ value: "aé🐦b", cursor: 2 },
 		text_input_event([], [KeyBackspace]),
 	)
 	deleted = update(
 		{ value: "aé🐦b", cursor: 1 },
 		text_input_event([], [KeyDelete]),
 	)
-	state_is(backspaced, "aéb", 3) and state_is(deleted, "a🐦b", 1)
+	state_is(backspaced, "aéb", 2) and state_is(deleted, "a🐦b", 1)
 }
 
 ## Boundary deletions are no-ops; Home and End set exact byte boundaries.
 expect {
 	at_start = { value: "é", cursor: 0 }
-	at_end = { value: "é", cursor: 2 }
+	at_end = { value: "é", cursor: 1 }
 	backspace_start = update(at_start, text_input_event([], [KeyBackspace]))
 	delete_end = update(at_end, text_input_event([], [KeyDelete]))
 	home = update(at_end, text_input_event([], [KeyHome]))
 	end = update(at_start, text_input_event([], [KeyEnd]))
 	state_is(backspace_start, "é", 0)
-		and state_is(delete_end, "é", 2)
+		and state_is(delete_end, "é", 1)
 			and home.cursor == 0
-				and end.cursor == 2
+				and end.cursor == 1
 }
 
 ## Single-line controls and invalid Unicode scalars are ignored.
@@ -222,11 +222,11 @@ expect {
 	state_is(next, "A", 1)
 }
 
-## Stale and mid-scalar cursors normalize backward to a valid boundary.
+## Stale and out-of-range cursors clamp to a valid boundary.
 expect {
 	out_of_range = update({ value: "é", cursor: 99 }, text_input_event([], []))
-	mid_scalar = update({ value: "aéb", cursor: 2 }, text_input_event([], []))
-	state_is(out_of_range, "é", 2) and state_is(mid_scalar, "aéb", 1)
+	stale = update({ value: "aéb", cursor: 5 }, text_input_event([], []))
+	state_is(out_of_range, "é", 1) and state_is(stale, "aéb", 3)
 }
 
 ## An idle batch preserves an already valid state exactly.

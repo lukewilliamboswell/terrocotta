@@ -8,26 +8,46 @@ Unicode := [].{
 	## A cursor over Unicode scalar boundaries in a UTF-8 text value.
 	ScalarCursor :: { source : Str, offset : U64 }.{
 
-		## Create a cursor at or immediately before the requested byte offset.
+		## Create a cursor at the Nth scalar boundary. Clamps into [0, count].
 		at : Str, U64 -> ScalarCursor
 		at = |source, requested| {
-			clamped = requested.min(source.count_utf8_bytes())
-			var $offset = 0
+			byte_count = source.count_utf8_bytes()
+			var $offset = byte_count
+			var $i = 0
 			for located in Scalar.iter(source) {
-				start = ByteRange.start(located.byte_range)
-				end = ByteRange.end(located.byte_range)
-				if end <= clamped {
-					$offset = end
-				} else if start < clamped {
-					$offset = start
+				if $i == requested {
+					$offset = ByteRange.start(located.byte_range)
 				}
+				$i = $i + 1
 			}
 			{ source, offset: $offset }
+		}
+
+		## Return the cursor's scalar ordinal position.
+		position : ScalarCursor -> U64
+		position = |cursor| {
+			var $pos = 0
+			for located in Scalar.iter(cursor.source) {
+				if ByteRange.end(located.byte_range) <= cursor.offset {
+					$pos = $pos + 1
+				}
+			}
+			$pos
 		}
 
 		## Return the cursor's normalized UTF-8 byte offset.
 		byte_offset : ScalarCursor -> U64
 		byte_offset = |cursor| cursor.offset
+
+		## Count the number of Unicode scalars in a string.
+		count : Str -> U64
+		count = |source| {
+			var $n = 0
+			for _ in Scalar.iter(source) {
+				$n = $n + 1
+			}
+			$n
+		}
 
 		## Move to the previous Unicode scalar boundary.
 		previous : ScalarCursor -> ScalarCursor
