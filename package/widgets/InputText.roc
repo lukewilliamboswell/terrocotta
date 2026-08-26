@@ -87,7 +87,7 @@ InputText :: [].{
 ## Return the text before a normalized cursor.
 text_before_cursor : Str, U64 -> Str
 text_before_cursor = |value, pos| {
-	cursor = GraphemeCursor.at(value, pos)
+	cursor = GraphemeCursor.new(value, pos)
 	Str.from_utf8_lossy(value.to_utf8().sublist({ start: 0, len: cursor.byte_offset() }))
 }
 
@@ -95,7 +95,7 @@ text_before_cursor = |value, pos| {
 update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
 update = |state, event| {
 	var $value = state.value
-	var $cursor = GraphemeCursor.at($value, state.cursor.min(GraphemeCursor.count($value)))
+	var $cursor = GraphemeCursor.new($value, state.cursor.min(GraphemeCursor.count($value)))
 	for key in event.keys {
 		($value, $cursor) = match key {
 			KeyLeft => ($value, $cursor.previous())
@@ -131,7 +131,7 @@ remove_before = |value, cursor| {
 		start = cursor.previous().byte_offset()
 		end = cursor.byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, GraphemeCursor.at(next_value, cursor.position() - 1))
+		(next_value, GraphemeCursor.new(next_value, cursor.position() - 1))
 	}
 }
 
@@ -144,7 +144,7 @@ remove_after = |value, cursor| {
 		start = cursor.byte_offset()
 		end = cursor.next().byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, GraphemeCursor.at(next_value, cursor.position()))
+		(next_value, GraphemeCursor.new(next_value, cursor.position()))
 	}
 }
 
@@ -160,7 +160,7 @@ insert_text = |value, cursor, content| {
 		before = bytes.sublist({ start: 0, len: offset })
 		after = bytes.sublist({ start: offset, len: bytes.len() - offset })
 		next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
-		(next_value, GraphemeCursor.at(next_value, cursor.position() + GraphemeCursor.count(content)))
+		(next_value, GraphemeCursor.new(next_value, cursor.position() + GraphemeCursor.count(content)))
 	}
 }
 

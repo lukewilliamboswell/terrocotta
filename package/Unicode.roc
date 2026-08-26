@@ -10,13 +10,13 @@ Unicode := [].{
 	ScalarCursor :: { source : Str, offset : U64 }.{
 
 		## Create a cursor at the Nth scalar boundary. Clamps into [0, count].
-		at : Str, U64 -> ScalarCursor
-		at = |source, requested| {
+		new : Str, U64 -> ScalarCursor
+		new = |source, position| {
 			byte_count = source.count_utf8_bytes()
 			var $offset = byte_count
 			var $i = 0
 			for located in Scalar.iter(source) {
-				if $i == requested {
+				if $i == position {
 					$offset = ByteRange.start(located.byte_range)
 				}
 				$i = $i + 1
@@ -87,13 +87,13 @@ Unicode := [].{
 	GraphemeCursor :: { source : Str, offset : U64 }.{
 
 		## Create a cursor at the Nth cluster boundary. Clamps into [0, count].
-		at : Str, U64 -> GraphemeCursor
-		at = |source, requested| {
+		new : Str, U64 -> GraphemeCursor
+		new = |source, position| {
 			byte_count = source.count_utf8_bytes()
 			var $offset = byte_count
 			var $i = 0
 			for range in Grapheme.iter_ranges(source) {
-				if $i == requested {
+				if $i == position {
 					$offset = ByteRange.start(range)
 				}
 				$i = $i + 1
@@ -217,11 +217,11 @@ expect GraphemeCursor.count("🇫🇷") == 1
 expect GraphemeCursor.count("á") == 1
 
 # at clamps past end
-expect GraphemeCursor.at("ab", 99).byte_offset() == 2
+expect GraphemeCursor.new("ab", 99).byte_offset() == 2
 
 # previous / next walk clusters
 expect {
-	cursor = GraphemeCursor.at("aéb", 1)
+	cursor = GraphemeCursor.new("aéb", 1)
 	GraphemeCursor.byte_offset(cursor) == 1
 		and GraphemeCursor.byte_offset(GraphemeCursor.next(cursor)) == 3
 			and GraphemeCursor.byte_offset(GraphemeCursor.previous(cursor)) == 0
@@ -229,7 +229,7 @@ expect {
 
 # start and end
 expect {
-	cursor = GraphemeCursor.at("é", 1)
+	cursor = GraphemeCursor.new("é", 1)
 	GraphemeCursor.byte_offset(GraphemeCursor.start(cursor)) == 0
 		and GraphemeCursor.byte_offset(GraphemeCursor.end(cursor)) == 2
 }
