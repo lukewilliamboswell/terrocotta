@@ -111,9 +111,16 @@ Unicode := [].{
 		position : GraphemeCursor -> U64
 		position = |cursor| {
 			var $pos = 0
+			var $done = Bool.False
 			for range in Grapheme.iter_ranges(cursor.source) {
-				if ByteRange.end(range) <= cursor.offset {
+				if $done {
+					$pos
+				} else if ByteRange.end(range) <= cursor.offset {
 					$pos = $pos + 1
+					$pos
+				} else {
+					$done = Bool.True
+					$pos
 				}
 			}
 			$pos
@@ -137,9 +144,16 @@ Unicode := [].{
 		previous : GraphemeCursor -> GraphemeCursor
 		previous = |cursor| {
 			var $offset = 0
+			var $done = Bool.False
 			for range in Grapheme.iter_ranges(cursor.source) {
-				if ByteRange.end(range) <= cursor.offset {
+				if $done {
+					$offset
+				} else if ByteRange.end(range) <= cursor.offset {
 					$offset = ByteRange.start(range)
+					$offset
+				} else {
+					$done = Bool.True
+					$offset
 				}
 			}
 			{ ..cursor, offset: $offset }
@@ -149,9 +163,16 @@ Unicode := [].{
 		next : GraphemeCursor -> GraphemeCursor
 		next = |cursor| {
 			var $offset = cursor.offset
+			var $done = Bool.False
 			for range in Grapheme.iter_ranges(cursor.source) {
-				if ByteRange.start(range) == cursor.offset {
+				if $done {
+					$offset
+				} else if ByteRange.start(range) == cursor.offset {
 					$offset = ByteRange.end(range)
+					$done = Bool.True
+					$offset
+				} else {
+					$offset
 				}
 			}
 			{ ..cursor, offset: $offset }
@@ -169,12 +190,18 @@ Unicode := [].{
 	## Return the smallest cluster boundary at or after a byte offset.
 	snap_forward : Str, U64 -> U64
 	snap_forward = |source, byte_off| {
-		var $result = source.count_utf8_bytes()
+		total = source.count_utf8_bytes()
+		var $result = total
+		var $done = Bool.False
 		for range in Grapheme.iter_ranges(source) {
-			if ByteRange.start(range) >= byte_off {
-				if ByteRange.start(range) < $result {
-					$result = ByteRange.start(range)
-				}
+			if $done {
+				$result
+			} else if ByteRange.start(range) >= byte_off {
+				$result = ByteRange.start(range)
+				$done = Bool.True
+				$result
+			} else {
+				$result
 			}
 		}
 		$result
