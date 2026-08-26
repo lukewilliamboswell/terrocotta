@@ -28,9 +28,16 @@ Unicode := [].{
 		position : ScalarCursor -> U64
 		position = |cursor| {
 			var $pos = 0
+			var $done = Bool.False
 			for located in Scalar.iter(cursor.source) {
-				if ByteRange.end(located.byte_range) <= cursor.offset {
+				if $done {
+					$pos
+				} else if ByteRange.end(located.byte_range) <= cursor.offset {
 					$pos = $pos + 1
+					$pos
+				} else {
+					$done = Bool.True
+					$pos
 				}
 			}
 			$pos
@@ -54,9 +61,16 @@ Unicode := [].{
 		previous : ScalarCursor -> ScalarCursor
 		previous = |cursor| {
 			var $offset = 0
+			var $done = Bool.False
 			for located in Scalar.iter(cursor.source) {
-				if ByteRange.end(located.byte_range) <= cursor.offset {
+				if $done {
+					$offset
+				} else if ByteRange.end(located.byte_range) <= cursor.offset {
 					$offset = ByteRange.start(located.byte_range)
+					$offset
+				} else {
+					$done = Bool.True
+					$offset
 				}
 			}
 			{ ..cursor, offset: $offset }
@@ -66,9 +80,16 @@ Unicode := [].{
 		next : ScalarCursor -> ScalarCursor
 		next = |cursor| {
 			var $offset = cursor.offset
+			var $done = Bool.False
 			for located in Scalar.iter(cursor.source) {
-				if ByteRange.start(located.byte_range) == cursor.offset {
+				if $done {
+					$offset
+				} else if ByteRange.start(located.byte_range) == cursor.offset {
 					$offset = ByteRange.end(located.byte_range)
+					$done = Bool.True
+					$offset
+				} else {
+					$offset
 				}
 			}
 			{ ..cursor, offset: $offset }
