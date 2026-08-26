@@ -64,8 +64,8 @@ update = |state, event| {
 			KeyRight => ($value, $cursor.next())
 			KeyHome => ($value, $cursor.start())
 			KeyEnd => ($value, $cursor.end())
-			KeyBackspace => backspace($value, $cursor)
-			KeyDelete => delete($value, $cursor)
+			KeyBackspace => remove_before($value, $cursor)
+			KeyDelete => remove_after($value, $cursor)
 		}
 	}
 
@@ -85,8 +85,8 @@ remove_bytes = |value, start, end| {
 }
 
 ## Remove the Unicode scalar immediately before the cursor.
-backspace : Str, TextCursor -> (Str, TextCursor)
-backspace = |value, cursor| {
+remove_before : Str, TextCursor -> (Str, TextCursor)
+remove_before = |value, cursor| {
 	if cursor.byte_offset() == 0 {
 		(value, cursor)
 	} else {
@@ -98,8 +98,8 @@ backspace = |value, cursor| {
 }
 
 ## Remove the Unicode scalar immediately after the cursor.
-delete : Str, TextCursor -> (Str, TextCursor)
-delete = |value, cursor| {
+remove_after : Str, TextCursor -> (Str, TextCursor)
+remove_after = |value, cursor| {
 	if cursor.byte_offset() >= value.count_utf8_bytes() {
 		(value, cursor)
 	} else {
@@ -111,6 +111,7 @@ delete = |value, cursor| {
 }
 
 ## Insert text at the cursor and advance it by the inserted UTF-8 byte length.
+insert_text : Str, TextCursor, Str -> Str, TextCursor
 insert_text = |value, cursor, content| {
     if content.is_empty() {
         return (value, cursor)
