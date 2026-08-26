@@ -26,7 +26,7 @@ InputText :: [].{
 		box(
 			{
 				id: config.id,
-				events: [OnTextInput(Box.box(|event| on_change(InputText.update(state, event))))],
+				events: [OnTextInput(Box.box(|event| on_change(update(state, event))))],
 				style: |status| {
 					border_color = if status.focused {
 						theme.palette.primary.strong.fill
@@ -51,19 +51,15 @@ InputText :: [].{
 			[text(content)],
 		)
 	}
-
-	## Update controlled input state from one text-input event.
-	update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
-	update = |state, event| update_text_input(state, event)
 }
 
 ## Update input text state.
-update_text_input : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
-update_text_input = |state, event| {
+update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
+update = |state, event| {
 	var $value = state.value
 	var $cursor = TextCursor.at($value, state.cursor)
 	for key in event.keys {
-		$value, $cursor = match key {
+		($value, $cursor) = match key {
 			KeyLeft => ($value, $cursor.previous())
 			KeyRight => ($value, $cursor.next())
 			KeyHome => ($value, $cursor.start())
@@ -73,12 +69,9 @@ update_text_input = |state, event| {
 		}
 	}
 
-	appended = codepoints_to_str(event.codepoints)
-	if !appended.is_empty() {
-		result = insert_text($value, $cursor, appended)
-		$value = result.value
-		$cursor = result.cursor
-	}
+	event_text = codepoints_to_str(event.codepoints)
+	($value, $cursor) = insert_text($value, $cursor, event_text)
+
 	{ value: $value, cursor: $cursor.byte_offset() }
 }
 
@@ -118,14 +111,17 @@ delete = |value, cursor| {
 }
 
 ## Insert text at the cursor and advance it by the inserted UTF-8 byte length.
-insert_text = |value, cursor, inserted| {
+insert_text = |value, cursor, content| {
+    if content.is_empty() {
+        return (value, cursor)
+    }
 	bytes = value.to_utf8()
-	inserted_bytes = inserted.to_utf8()
+	content_bytes = content.to_utf8()
 	offset = cursor.byte_offset()
 	before = bytes.sublist({ start: 0, len: offset })
 	after = bytes.sublist({ start: offset, len: bytes.len() - offset })
-	next_value = Str.from_utf8_lossy(before.concat(inserted_bytes).concat(after))
-	{ value: next_value, cursor: TextCursor.at(next_value, offset + inserted_bytes.len()) }
+	next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
+	(next_value, TextCursor.at(next_value, offset + content_bytes.len()))
 }
 
 text_input_event : List(U32), List(Event.TextControlKey) -> Event.TextInputEvent
@@ -135,7 +131,7 @@ state_is = |state, value, cursor| state.value == value and state.cursor == curso
 
 ## A batch preserves committed-codepoint order and inserts at the cursor.
 expect {
-	next = InputText.update(
+	next = update(
 		{ value: "ab", cursor: 1 },
 		text_input_event([0xE9, 0x1F426, 99], []),
 	)
@@ -144,21 +140,19 @@ expect {
 
 ## Movement crosses Unicode scalar boundaries rather than individual bytes.
 expect {
-	left = InputText.update(
-		{ value: "aé🐦", cursor: 7 },
-		text_input_event([], [KeyLeft]),
-	)
-	right = InputText.update(left, text_input_event([], [KeyRight]))
+    state = { value: "aé🐦", cursor: 7 }
+	left = update(state, text_input_event([], [KeyLeft]))
+	right = update(left, text_input_event([], [KeyRight]))
 	state_is(left, "aé🐦", 3) and state_is(right, "aé🐦", 7)
 }
 
 ## Backspace and Delete remove exactly one adjacent scalar.
 expect {
-	backspaced = InputText.update(
+	backspaced = update(
 		{ value: "aé🐦b", cursor: 7 },
 		text_input_event([], [KeyBackspace]),
 	)
-	deleted = InputText.update(
+	deleted = update(
 		{ value: "aé🐦b", cursor: 1 },
 		text_input_event([], [KeyDelete]),
 	)
@@ -169,10 +163,10 @@ expect {
 expect {
 	at_start = { value: "é", cursor: 0 }
 	at_end = { value: "é", cursor: 2 }
-	backspace_start = InputText.update(at_start, text_input_event([], [KeyBackspace]))
-	delete_end = InputText.update(at_end, text_input_event([], [KeyDelete]))
-	home = InputText.update(at_end, text_input_event([], [KeyHome]))
-	end = InputText.update(at_start, text_input_event([], [KeyEnd]))
+	backspace_start = update(at_start, text_input_event([], [KeyBackspace]))
+	delete_end = update(at_end, text_input_event([], [KeyDelete]))
+	home = update(at_end, text_input_event([], [KeyHome]))
+	end = update(at_start, text_input_event([], [KeyEnd]))
 	state_is(backspace_start, "é", 0)
 		and state_is(delete_end, "é", 2)
 			and home.cursor == 0
@@ -181,7 +175,7 @@ expect {
 
 ## Single-line controls and invalid Unicode scalars are ignored.
 expect {
-	next = InputText.update(
+	next = update(
 		{ value: "", cursor: 0 },
 		text_input_event([9, 10, 13, 0x7F, 0xD800, 0x110000, 65], []),
 	)
@@ -190,14 +184,14 @@ expect {
 
 ## Stale and mid-scalar cursors normalize backward to a valid boundary.
 expect {
-	out_of_range = InputText.update({ value: "é", cursor: 99 }, text_input_event([], []))
-	mid_scalar = InputText.update({ value: "aéb", cursor: 2 }, text_input_event([], []))
+	out_of_range = update({ value: "é", cursor: 99 }, text_input_event([], []))
+	mid_scalar = update({ value: "aéb", cursor: 2 }, text_input_event([], []))
 	state_is(out_of_range, "é", 2) and state_is(mid_scalar, "aéb", 1)
 }
 
 ## An idle batch preserves an already valid state exactly.
 expect {
-	next = InputText.update({ value: "hello", cursor: 2 }, text_input_event([], []))
+	next = update({ value: "hello", cursor: 2 }, text_input_event([], []))
 	state_is(next, "hello", 2)
 }
 
