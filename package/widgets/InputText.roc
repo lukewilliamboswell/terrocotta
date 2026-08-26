@@ -3,7 +3,7 @@ import ../Color
 import ../Element exposing [View, box, text, style]
 import ../Event
 import ../Theme
-import ../Unicode exposing [ScalarCursor, codepoints_to_str]
+import ../Unicode exposing [GraphemeCursor, codepoints_to_str]
 import rrt.Font
 
 InputText :: [].{
@@ -87,7 +87,7 @@ InputText :: [].{
 ## Return the text before a normalized cursor.
 text_before_cursor : Str, U64 -> Str
 text_before_cursor = |value, pos| {
-	cursor = ScalarCursor.at(value, pos)
+	cursor = GraphemeCursor.at(value, pos)
 	Str.from_utf8_lossy(value.to_utf8().sublist({ start: 0, len: cursor.byte_offset() }))
 }
 
@@ -95,7 +95,7 @@ text_before_cursor = |value, pos| {
 update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
 update = |state, event| {
 	var $value = state.value
-	var $cursor = ScalarCursor.at($value, state.cursor.min(ScalarCursor.count($value)))
+	var $cursor = GraphemeCursor.at($value, state.cursor.min(GraphemeCursor.count($value)))
 	for key in event.keys {
 		($value, $cursor) = match key {
 			KeyLeft => ($value, $cursor.previous())
@@ -122,8 +122,8 @@ remove_bytes = |value, start, end| {
 	Str.from_utf8_lossy(before.concat(after))
 }
 
-## Remove the Unicode scalar immediately before the cursor.
-remove_before : Str, ScalarCursor -> (Str, ScalarCursor)
+## Remove the grapheme cluster immediately before the cursor.
+remove_before : Str, GraphemeCursor -> (Str, GraphemeCursor)
 remove_before = |value, cursor| {
 	if cursor.byte_offset() == 0 {
 		(value, cursor)
@@ -131,12 +131,12 @@ remove_before = |value, cursor| {
 		start = cursor.previous().byte_offset()
 		end = cursor.byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, ScalarCursor.at(next_value, cursor.position() - 1))
+		(next_value, GraphemeCursor.at(next_value, cursor.position() - 1))
 	}
 }
 
-## Remove the Unicode scalar immediately after the cursor.
-remove_after : Str, ScalarCursor -> (Str, ScalarCursor)
+## Remove the grapheme cluster immediately after the cursor.
+remove_after : Str, GraphemeCursor -> (Str, GraphemeCursor)
 remove_after = |value, cursor| {
 	if cursor.byte_offset() >= value.count_utf8_bytes() {
 		(value, cursor)
@@ -144,12 +144,12 @@ remove_after = |value, cursor| {
 		start = cursor.byte_offset()
 		end = cursor.next().byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, ScalarCursor.at(next_value, cursor.position()))
+		(next_value, GraphemeCursor.at(next_value, cursor.position()))
 	}
 }
 
-## Insert text at the cursor and advance it by the inserted scalar count.
-insert_text : Str, ScalarCursor, Str -> (Str, ScalarCursor)
+## Insert text at the cursor and advance it by the inserted cluster count.
+insert_text : Str, GraphemeCursor, Str -> (Str, GraphemeCursor)
 insert_text = |value, cursor, content| {
 	if content.is_empty() {
 		(value, cursor)
@@ -160,7 +160,7 @@ insert_text = |value, cursor, content| {
 		before = bytes.sublist({ start: 0, len: offset })
 		after = bytes.sublist({ start: offset, len: bytes.len() - offset })
 		next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
-		(next_value, ScalarCursor.at(next_value, cursor.position() + ScalarCursor.count(content)))
+		(next_value, GraphemeCursor.at(next_value, cursor.position() + GraphemeCursor.count(content)))
 	}
 }
 
@@ -233,6 +233,72 @@ expect {
 expect {
 	next = update({ value: "hello", cursor: 2 }, text_input_event([], []))
 	state_is(next, "hello", 2)
+}
+
+## Arrow left/right through a ZWJ family emoji treats it as one cluster.
+expect {
+	state = { value: "a👨‍👩‍👧‍👦b", cursor: 2 }
+	left = update(state, text_input_event([], [KeyLeft]))
+	right = update(left, text_input_event([], [KeyRight]))
+	state_is(left, "a👨‍👩‍👧‍👦b", 1) and state_is(right, "a👨‍👩‍👧‍👦b", 2)
+}
+
+## Backspace before a ZWJ family emoji removes the entire cluster.
+expect {
+	backspaced = update(
+		{ value: "a👨‍👩‍👧‍👦b", cursor: 2 },
+		text_input_event([], [KeyBackspace]),
+	)
+	state_is(backspaced, "ab", 1)
+}
+
+## Arrow left/right through a combining accent treats it as one cluster.
+expect {
+	state = { value: "aéb", cursor: 2 }
+	left = update(state, text_input_event([], [KeyLeft]))
+	right = update(left, text_input_event([], [KeyRight]))
+	state_is(left, "aéb", 1) and state_is(right, "aéb", 2)
+}
+
+## Backspace before a combining accent removes the whole grapheme.
+expect {
+	backspaced = update(
+		{ value: "aéb", cursor: 2 },
+		text_input_event([], [KeyBackspace]),
+	)
+	state_is(backspaced, "ab", 1)
+}
+
+## Arrow left/right through a regional-indicator flag pair treats it as one cluster.
+expect {
+	state = { value: "a🇫🇷b", cursor: 2 }
+	left = update(state, text_input_event([], [KeyLeft]))
+	right = update(left, text_input_event([], [KeyRight]))
+	state_is(left, "a🇫🇷b", 1) and state_is(right, "a🇫🇷b", 2)
+}
+
+## Backspace before a flag pair removes the entire flag.
+expect {
+	backspaced = update(
+		{ value: "a🇫🇷b", cursor: 2 },
+		text_input_event([], [KeyBackspace]),
+	)
+	state_is(backspaced, "ab", 1)
+}
+
+## Inserting a combining accent after a bare letter merges into one cluster.
+expect {
+	next = update(
+		{ value: "eb", cursor: 1 },
+		text_input_event([0x301], []),
+	)
+	state_is(next, "éb", 1)
+}
+
+## Mid-cluster byte-offset state snaps forward via from_byte on restore.
+expect {
+	next = update({ value: "éb", cursor: 1 }, text_input_event([], []))
+	state_is(next, "éb", 1)
 }
 
 InputTextTestMsg : [InputChanged({ value : Str, cursor : U64 })]
