@@ -6,6 +6,7 @@ app [Model, Msg, program] {
 }
 
 import rr.App
+import rr.Text
 import tc.Color
 import tc.Element exposing [View, box, style]
 import tc.Program
@@ -14,7 +15,7 @@ import tc.Widget
 
 Model : Program.State(AppModel, Msg)
 
-AppModel : { theme : Theme, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool, name : { value : Str, cursor : U64 } }
+AppModel : { theme : Theme, font : Text.Font, slider_value : F32, select_open : Bool, select_selected : U64, toggle_on : Bool, name : { value : Str, cursor : U64 } }
 
 Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool), NameChanged(Widget.TextInputState)]
 
@@ -22,9 +23,11 @@ configure : List(Str) -> App.Config
 configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 500 }).with_resizable(True)
 
 init! : App.InitCallback(AppModel, [])
-init! = |_startup| {
+init! = |startup| {
+	font = startup.default_font!().map_err(|_| Exit(1))?
 	model = {
 		theme: Theme.dark,
+		font,
 		slider_value: 45,
 		select_open: False,
 		select_selected: 0,
@@ -114,6 +117,7 @@ theme_card = |theme, name, model| {
 				theme,
 				{
 					id: Id("name"),
+					font: model.font,
 					state: model.name,
 					placeholder: "Name",
 					on_change: |state| NameChanged(state),

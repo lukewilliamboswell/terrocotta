@@ -5,11 +5,11 @@ import unicode.Scalar
 
 Unicode := [].{
 
-	## A normalized UTF-8 byte position within a text value.
-	TextCursor :: { source : Str, offset : U64 }.{
+	## A cursor over Unicode scalar boundaries in a UTF-8 text value.
+	ScalarCursor :: { source : Str, offset : U64 }.{
 
 		## Create a cursor at or immediately before the requested byte offset.
-		at : Str, U64 -> TextCursor
+		at : Str, U64 -> ScalarCursor
 		at = |source, requested| {
 			clamped = requested.min(source.count_utf8_bytes())
 			var $offset = 0
@@ -26,11 +26,11 @@ Unicode := [].{
 		}
 
 		## Return the cursor's normalized UTF-8 byte offset.
-		byte_offset : TextCursor -> U64
+		byte_offset : ScalarCursor -> U64
 		byte_offset = |cursor| cursor.offset
 
 		## Move to the previous Unicode scalar boundary.
-		previous : TextCursor -> TextCursor
+		previous : ScalarCursor -> ScalarCursor
 		previous = |cursor| {
 			var $offset = 0
 			for located in Scalar.iter(cursor.source) {
@@ -42,7 +42,7 @@ Unicode := [].{
 		}
 
 		## Move to the next Unicode scalar boundary.
-		next : TextCursor -> TextCursor
+		next : ScalarCursor -> ScalarCursor
 		next = |cursor| {
 			var $offset = cursor.offset
 			for located in Scalar.iter(cursor.source) {
@@ -54,11 +54,11 @@ Unicode := [].{
 		}
 
 		## Move to the start of the text.
-		start : TextCursor -> TextCursor
+		start : ScalarCursor -> ScalarCursor
 		start = |cursor| { ..cursor, offset: 0 }
 
 		## Move to the end of the text.
-		end : TextCursor -> TextCursor
+		end : ScalarCursor -> ScalarCursor
 		end = |cursor| { ..cursor, offset: cursor.source.count_utf8_bytes() }
 	}
 

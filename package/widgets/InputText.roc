@@ -3,29 +3,37 @@ import ../Color
 import ../Element exposing [View, box, text, style]
 import ../Event
 import ../Theme
-import ../Unicode exposing [TextCursor, codepoints_to_str]
+import ../Unicode exposing [ScalarCursor, codepoints_to_str]
+import rrt.Font
 
 InputText :: [].{
 	input_text : Theme,
 	{
-		id : Element.ElementId,
-		state : { value : Str, cursor : U64 },
-		placeholder : Str,
+	    state : { value : Str, cursor : U64 },
+					font : Font,
 		on_change : { value : Str, cursor : U64 } -> msg,
+		id : Element.ElementId ?? Auto,
+		placeholder : Str ?? "",
 	} -> View(msg)
-	input_text = |theme, config| {
-		state = config.state
-		on_change = config.on_change
-		is_empty = state.value.is_empty()
+	input_text = |theme, { id, font, state, placeholder, on_change}| {
 		surface = theme.palette.background.weak
 		content_color = theme.palette.background.base.content
 
-		font_color = if is_empty Color.mix(content_color, surface.fill, 112) else content_color
-		content = if is_empty config.placeholder else state.value
+		# placeholder
+		(content, font_color) = if state.value.is_empty() {
+		    (placeholder, content_color.mix(surface.fill, 112))
+		} else {
+		    (state.value, content_color)
+		}
+
+		# caret
+		prefix = text_before_cursor(state.value, state.cursor)
+		prefix_width = Font.measure(font, { text: prefix, size: theme.font_size, spacing: Element.default_text.spacing }).width
+		caret_offset_x = theme.gap / 2 + prefix_width + 1
 
 		box(
 			{
-				id: config.id,
+				id,
 				events: [OnTextInput(Box.box(|event| on_change(update(state, event))))],
 				style: |status| {
 					border_color = if status.focused {
@@ -48,16 +56,46 @@ InputText :: [].{
 						.border({ color: border_color, left: 1, right: 1, top: 1, bottom: 1 })
 				},
 			},
-			[text(content)],
+			[
+				text(content),
+				box(
+					{
+						style: |_| style
+							.width(Fixed(1))
+							.height(Fixed(theme.font_size))
+							.background(content_color)
+							.floating(
+								Floating({
+									target: Parent,
+									config: {
+										..Element.default_floating_config,
+										offset: { x: caret_offset_x, y: 0 },
+										attach_points: { element: LeftCenter, target: LeftCenter },
+										capture: Passthrough,
+										clip_to: AttachedParent,
+									},
+								}),
+							),
+					},
+					[],
+				),
+			],
 		)
 	}
+}
+
+## Return the text before a normalized cursor.
+text_before_cursor : Str, U64 -> Str
+text_before_cursor = |value, byte_offset| {
+    # cursor = ScalarCursor.at(value, byte_offset)
+	Str.from_utf8_lossy(value.to_utf8().sublist({ start: 0, len: byte_offset }))
 }
 
 ## Update input text state.
 update : { value : Str, cursor : U64 }, Event.TextInputEvent -> { value : Str, cursor : U64 }
 update = |state, event| {
 	var $value = state.value
-	var $cursor = TextCursor.at($value, state.cursor)
+	var $cursor = ScalarCursor.at($value, state.cursor)
 	for key in event.keys {
 		($value, $cursor) = match key {
 			KeyLeft => ($value, $cursor.previous())
@@ -85,7 +123,7 @@ remove_bytes = |value, start, end| {
 }
 
 ## Remove the Unicode scalar immediately before the cursor.
-remove_before : Str, TextCursor -> (Str, TextCursor)
+remove_before : Str, ScalarCursor -> (Str, ScalarCursor)
 remove_before = |value, cursor| {
 	if cursor.byte_offset() == 0 {
 		(value, cursor)
@@ -93,12 +131,12 @@ remove_before = |value, cursor| {
 		start = cursor.previous().byte_offset()
 		end = cursor.byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, TextCursor.at(next_value, start))
+		(next_value, ScalarCursor.at(next_value, start))
 	}
 }
 
 ## Remove the Unicode scalar immediately after the cursor.
-remove_after : Str, TextCursor -> (Str, TextCursor)
+remove_after : Str, ScalarCursor -> (Str, ScalarCursor)
 remove_after = |value, cursor| {
 	if cursor.byte_offset() >= value.count_utf8_bytes() {
 		(value, cursor)
@@ -106,12 +144,12 @@ remove_after = |value, cursor| {
 		start = cursor.byte_offset()
 		end = cursor.next().byte_offset()
 		next_value = remove_bytes(value, start, end)
-		(next_value, TextCursor.at(next_value, start))
+		(next_value, ScalarCursor.at(next_value, start))
 	}
 }
 
 ## Insert text at the cursor and advance it by the inserted UTF-8 byte length.
-insert_text : Str, TextCursor, Str -> (Str, TextCursor)
+insert_text : Str, ScalarCursor, Str -> (Str, ScalarCursor)
 insert_text = |value, cursor, content| {
 	if content.is_empty() {
 		(value, cursor)
@@ -122,7 +160,7 @@ insert_text = |value, cursor, content| {
 		before = bytes.sublist({ start: 0, len: offset })
 		after = bytes.sublist({ start: offset, len: bytes.len() - offset })
 		next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
-		(next_value, TextCursor.at(next_value, offset + content_bytes.len()))
+		(next_value, ScalarCursor.at(next_value, offset + content_bytes.len()))
 	}
 }
 
@@ -142,7 +180,7 @@ expect {
 
 ## Movement crosses Unicode scalar boundaries rather than individual bytes.
 expect {
-    state = { value: "aé🐦", cursor: 7 }
+	state = { value: "aé🐦", cursor: 7 }
 	left = update(state, text_input_event([], [KeyLeft]))
 	right = update(left, text_input_event([], [KeyRight]))
 	state_is(left, "aé🐦", 3) and state_is(right, "aé🐦", 7)
@@ -208,6 +246,7 @@ expect {
 		Theme.dark,
 		{
 			id: Id("name"),
+			font: Font.stub,
 			state: { value: "aéb", cursor: 3 },
 			placeholder: "Name",
 			on_change: |state| InputChanged(state),
@@ -217,6 +256,8 @@ expect {
 		[
 			OpenBox(Id("name"), _, [OnTextInput(_)]),
 			Text("aéb"),
+			OpenBox(Auto, _, []),
+			CloseBox,
 			CloseBox,
 		] => Bool.True
 		_ => Bool.False
@@ -229,6 +270,7 @@ expect {
 		Theme.dark,
 		{
 			id: Id("styled-name"),
+			font: Font.stub,
 			state: { value: "Roc", cursor: 3 },
 			placeholder: "Name",
 			on_change: |state| InputChanged(state),
@@ -250,6 +292,7 @@ expect {
 		Theme.dark,
 		{
 			id: Id("empty-name"),
+			font: Font.stub,
 			state: { value: "", cursor: 0 },
 			placeholder: "Name",
 			on_change: |state| InputChanged(state),
@@ -259,6 +302,8 @@ expect {
 		[
 			OpenBox(Id("empty-name"), _, [OnTextInput(_)]),
 			Text("Name"),
+			OpenBox(Auto, _, []),
+			CloseBox,
 			CloseBox,
 		] => Bool.True
 		_ => Bool.False
