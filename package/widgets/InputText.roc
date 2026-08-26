@@ -111,18 +111,19 @@ remove_after = |value, cursor| {
 }
 
 ## Insert text at the cursor and advance it by the inserted UTF-8 byte length.
-insert_text : Str, TextCursor, Str -> Str, TextCursor
+insert_text : Str, TextCursor, Str -> (Str, TextCursor)
 insert_text = |value, cursor, content| {
-    if content.is_empty() {
-        return (value, cursor)
-    }
-	bytes = value.to_utf8()
-	content_bytes = content.to_utf8()
-	offset = cursor.byte_offset()
-	before = bytes.sublist({ start: 0, len: offset })
-	after = bytes.sublist({ start: offset, len: bytes.len() - offset })
-	next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
-	(next_value, TextCursor.at(next_value, offset + content_bytes.len()))
+	if content.is_empty() {
+		(value, cursor)
+	} else {
+		bytes = value.to_utf8()
+		content_bytes = content.to_utf8()
+		offset = cursor.byte_offset()
+		before = bytes.sublist({ start: 0, len: offset })
+		after = bytes.sublist({ start: offset, len: bytes.len() - offset })
+		next_value = Str.from_utf8_lossy(before.concat(content_bytes).concat(after))
+		(next_value, TextCursor.at(next_value, offset + content_bytes.len()))
+	}
 }
 
 text_input_event : List(U32), List(Event.TextControlKey) -> Event.TextInputEvent
