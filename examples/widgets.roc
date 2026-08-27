@@ -20,7 +20,12 @@ AppModel : { theme : Theme, font : Text.Font, slider_value : F32, select_open : 
 Msg : [SetSliderValue(F32), SetTheme(Theme), ToggleSelect(Bool), SelectOption(U64), SetToggle(Bool), NameChanged(Widget.TextInputState)]
 
 configure : List(Str) -> App.Config
-configure = |_args| App.default.with_title("Widgets Example").with_size({ width: 640, height: 500 }).with_resizable(True)
+configure = |_args| App.default
+    .with_title("Widgets Example")
+    .with_size({ width: 640, height: 500 })
+    .with_resizable(True)
+    .with_default_font({ path: "examples/assets/Inter-Regular.ttf", size: 36 })
+
 
 init! : App.InitCallback(AppModel, [])
 init! = |startup| {
