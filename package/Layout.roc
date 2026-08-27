@@ -168,7 +168,17 @@ Layout :: {
 	## The solved node list is DFS preorder, so a reverse scan visits every
 	## child before its parent without another recursive traversal.
 	compute_paint_bounds : Layout -> Try(List(Bounds), LayoutError)
-	compute_paint_bounds = |layout| compute_layout_paint_bounds(layout)
+	compute_paint_bounds = |layout| {
+		result = compute_paint_data(layout)?
+		Ok(result.paint_bounds)
+	}
+
+	## Compute paint bounds and per-box scissor need in one reverse pass.
+	## `needs_clip[i]` is true when the box at `i` has overflow != Visible
+	## and any direct child's paint escapes its own bounds. Renderer can then
+	## decide `with_scissor` in O(1) instead of re-scanning children.
+	compute_paint_data : Layout -> Try({ paint_bounds : List(Bounds), needs_clip : List(Bool) }, LayoutError)
+	compute_paint_data = |layout| compute_layout_paint_data(layout)
 
 	## Expose solved traversal storage to the renderer without putting drawing
 	## behavior on Layout.
@@ -824,14 +834,28 @@ node_own_paint_bounds = |node| {
 ## Compute conservative subtree paint bounds with one reverse DFS-order scan.
 compute_layout_paint_bounds : Layout -> Try(List(Bounds), Layout.LayoutError)
 compute_layout_paint_bounds = |layout| {
+	result = compute_layout_paint_data(layout)?
+	Ok(result.paint_bounds)
+}
+
+## Compute paint bounds and per-box scissor need in one reverse pass.
+## `needs_clip[i]` is true when the box at `i` has overflow != Visible
+## and any direct child's paint escapes its own bounds. This is exactly
+## the condition that previously required `children_escape_bounds` in the
+## renderer, but now it is produced together with `paint_bounds` so the
+## renderer can decide `with_scissor` in O(1).
+compute_layout_paint_data : Layout -> Try({ paint_bounds : List(Bounds), needs_clip : List(Bool) }, Layout.LayoutError)
+compute_layout_paint_data = |layout| {
 	node_count = layout.nodes.len()
 	var $paint_bounds = layout.nodes.map(node_own_paint_bounds)
+	var $needs_clip = List.repeat(Bool.False, node_count)
 
 	for offset in 0..<node_count {
 		index = node_count - 1 - offset
 		node = layout.nodes.get(index)?
 		own_bounds = node_own_paint_bounds(node)
 		var $subtree_bounds = own_bounds
+		var $needs = Bool.False
 
 		for child_offset in 0..<node.child_count {
 			child_index = layout.child_indices.get(node.child_start + child_offset)?
@@ -841,6 +865,17 @@ compute_layout_paint_bounds = |layout| {
 				$paint_bounds.get(child_index)
 			}
 			child_bounds = child_bounds_result?
+			escaping = match node.kind {
+				BoxNode(box) => if box.overflow.x != Visible or box.overflow.y != Visible {
+					!child_bounds.is_empty() and !own_bounds.contains_bounds(child_bounds)
+				} else {
+					Bool.False
+				}
+				_ => Bool.False
+			}
+			if escaping {
+				$needs = Bool.True
+			}
 			visible_child_bounds = match node.kind {
 				BoxNode(box) => if box.overflow.x != Visible or box.overflow.y != Visible {
 					own_bounds.intersection(child_bounds)
@@ -856,9 +891,14 @@ compute_layout_paint_bounds = |layout| {
 		}
 
 		$paint_bounds = $paint_bounds.set(index, $subtree_bounds)?
+		node_needs = match node.kind {
+			BoxNode(box) => (box.overflow.x != Visible or box.overflow.y != Visible) and $needs
+			_ => Bool.False
+		}
+		$needs_clip = $needs_clip.set(index, node_needs)?
 	}
 
-	Ok($paint_bounds)
+	Ok({ paint_bounds: $paint_bounds, needs_clip: $needs_clip })
 }
 
 ## Return the topmost box hit at a point.

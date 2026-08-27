@@ -39,17 +39,19 @@ Renderer := [].{
 			frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
 		]
 	draw! = |frame, layout, screen| {
-		paint_bounds = layout.compute_paint_bounds().map_err(|_| Exit(1))?
+		paint_data = layout.compute_paint_data().map_err(|_| Exit(1))?
+		paint_bounds = paint_data.paint_bounds
+		needs_clip = paint_data.needs_clip
 		data = layout.render_data()
 		roots = Floating.roots_in_z_order(data.nodes, data.node_ids, data.root_indices, BackToFront).map_err(|_| Exit(1))?
 		for root in roots {
 			match root.clip {
-				Unclipped => draw_node!(frame, data, root.index, screen, Unclipped, paint_bounds)?
+				Unclipped => draw_node!(frame, data, root.index, screen, Unclipped, paint_bounds, needs_clip)?
 				Clipped(bounds) => {
 					frame.with_scissor!(
 						bounds.flatten(),
 						|scissor_frame| {
-							draw_node!(scissor_frame, data, root.index, screen, Clipped(bounds), paint_bounds).map_err(|_| ScopeLimit)?
+							draw_node!(scissor_frame, data, root.index, screen, Clipped(bounds), paint_bounds, needs_clip).map_err(|_| ScopeLimit)?
 							Ok({})
 						},
 					).map_err(|_| Exit(1))?
@@ -167,7 +169,7 @@ Renderer := [].{
 }
 
 ## Paint one node and its descendants, delegating to the host frame.
-draw_node! : frame, Renderer.Data, U64, Size, Floating.Clip, List(Bounds) => Try({}, [Exit(I64), ..])
+draw_node! : frame, Renderer.Data, U64, Size, Floating.Clip, List(Bounds), List(Bool) => Try({}, [Exit(I64), ..])
 	where [
 		frame.rectangle! : frame, Drawing.Rectangle => {},
 		frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
@@ -175,7 +177,7 @@ draw_node! : frame, Renderer.Data, U64, Size, Floating.Clip, List(Bounds) => Try
 		frame.texture! : frame, Drawing.TextureDraw => {},
 		frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
 	]
-draw_node! = |frame, data, index, screen, clip, paint_bounds| {
+draw_node! = |frame, data, index, screen, clip, paint_bounds, needs_clip| {
 	node = data.nodes.get(index).map_err(|_| Exit(1))?
 	subtree_paint_bounds = paint_bounds.get(index).map_err(|_| Exit(1))?
 	viewport = { position: { x: 0, y: 0 }, size: screen }
@@ -190,18 +192,14 @@ draw_node! = |frame, data, index, screen, clip, paint_bounds| {
 
 				# Descendants inherit the ancestor clip plus this box's overflow clip.
 				child_clip = effective_child_clip(placement, box)
-				should_clip = if box.overflow.x != Visible or box.overflow.y != Visible {
-					box_children_escape_paint_bounds(data, node, placement.bounds, paint_bounds).map_err(|_| Exit(1))?
-				} else {
-					Bool.False
-				}
+				should_clip = needs_clip.get(index).map_err(|_| Exit(1))?
 
 				draw_inner! = |inner_frame| {
 					# Paint children in declaration order
 					parent = data.nodes.get(index).map_err(|_| Exit(1))?
 					for offset in 0..<parent.child_count {
 						child_index = data.child_indices.get(parent.child_start + offset).map_err(|_| Exit(1))?
-						draw_node!(inner_frame, data, child_index, screen, child_clip, paint_bounds)?
+						draw_node!(inner_frame, data, child_index, screen, child_clip, paint_bounds, needs_clip)?
 					}
 					# Paint parent border above children (inside host scissor when clipping).
 					Renderer.draw_border!(inner_frame, placement, box)
@@ -209,6 +207,8 @@ draw_node! = |frame, data, index, screen, clip, paint_bounds| {
 				}
 
 				# Establish a host scissor only when descendants would escape this box.
+				# `needs_clip` is precomputed in `Layout.compute_paint_data` together
+				# with `paint_bounds` so the renderer does O(1) work here.
 				if should_clip {
 					clip_bounds = match child_clip {
 						Clipped(bounds) => bounds
@@ -242,19 +242,6 @@ draw_node! = |frame, data, index, screen, clip, paint_bounds| {
 		}
 		Ok({})
 	}
-}
-
-box_children_escape_paint_bounds : Renderer.Data, LayoutNode, Bounds, List(Bounds) -> Try(Bool, [OutOfBounds, ..])
-box_children_escape_paint_bounds = |data, box_node, bounds, paint_bounds| {
-	var $escapes = Bool.False
-	for offset in 0..<box_node.child_count {
-		child_index = data.child_indices.get(box_node.child_start + offset)?
-		child_paint = paint_bounds.get(child_index)?
-		if !child_paint.is_empty() and !bounds.contains_bounds(child_paint) {
-			$escapes = Bool.True
-		}
-	}
-	Ok($escapes)
 }
 
 ## Compute the clip children inherit from their parent box.
