@@ -113,6 +113,24 @@ Text := [].{
 	line_text = |content, line| {
 		slice(content, line.start, line.len)
 	}
+
+	## Compute the on-screen bounds for one line given the flattened box bounds.
+	line_bounds : { x : F32, y : F32, width : F32, height : F32 }, Config, Line, U64 -> { position : { x : F32, y : F32 }, size : { w : F32, h : F32 } }
+	line_bounds = |box, config, line, line_offset| {
+		position: {
+			x: box.x + align_offset(config.align, box.width, line.width),
+			y: box.y + line_offset.to_f32() * line.height,
+		},
+		size: { w: line.width, h: line.height },
+	}
+
+	## Horizontal offset for a line based on its alignment within the box.
+	align_offset : Element.TextAlign, F32, F32 -> F32
+	align_offset = |align, box_width, text_width| match align {
+		Left => 0
+		Center => (box_width - text_width) * 0.5
+		Right => box_width - text_width
+	}
 }
 
 measure_raw : RrtFont, Text.Config, Str -> RrtFont.Size

@@ -70,6 +70,36 @@ LayoutTypes := [].{
 						and a.position.y + a.size.h > b.position.y
 		}
 
+		intersection : Bounds, Bounds -> Bounds
+		intersection = |a, b| {
+			x = F32.max(a.position.x, b.position.x)
+			y = F32.max(a.position.y, b.position.y)
+			right = F32.min(a.position.x + a.size.w, b.position.x + b.size.w)
+			bottom = F32.min(a.position.y + a.size.h, b.position.y + b.size.h)
+			{
+				position: { x, y },
+				size: {
+					w: F32.max(0, right - x),
+					h: F32.max(0, bottom - y),
+				},
+			}
+		}
+
+		union : Bounds, Bounds -> Bounds
+		union = |a, b| {
+			x = F32.min(a.position.x, b.position.x)
+			y = F32.min(a.position.y, b.position.y)
+			right = F32.max(a.position.x + a.size.w, b.position.x + b.size.w)
+			bottom = F32.max(a.position.y + a.size.h, b.position.y + b.size.h)
+			{
+				position: { x, y },
+				size: { w: right - x, h: bottom - y },
+			}
+		}
+
+		is_empty : Bounds -> Bool
+		is_empty = |bounds| bounds.size.w <= 0 or bounds.size.h <= 0
+
 		expand : Bounds, Size -> Bounds
 		expand = |bounds, amount| {
 			position: {
@@ -84,6 +114,34 @@ LayoutTypes := [].{
 
 		is_eq : Bounds, Bounds -> Bool
 		is_eq = |a, b| a.position == b.position and a.size == b.size
+
+		flatten : Bounds -> { x : F32, y : F32, width : F32, height : F32 }
+		flatten = |bounds| {
+			x: bounds.position.x,
+			y: bounds.position.y,
+			width: bounds.size.w,
+			height: bounds.size.h,
+		}
+
+	}
+
+	VisibleRegion : [Visible(Bounds), Culled]
+
+	## Intersect conservative paint bounds with the viewport and effective clip.
+	## Edge-touching and zero-area rectangles are culled.
+	visible_region : Bounds, Bounds, [Clipped(Bounds), Unclipped] -> VisibleRegion
+	visible_region = |paint_bounds, viewport, clip| {
+		in_viewport = paint_bounds.intersection(viewport)
+		visible = match clip {
+			Unclipped => in_viewport
+			Clipped(bounds) => in_viewport.intersection(bounds)
+		}
+
+		if visible.is_empty() {
+			Culled
+		} else {
+			Visible(visible)
+		}
 	}
 
 	Axis : [XAxis, YAxis]
@@ -148,4 +206,24 @@ LayoutTypes := [].{
 		sizing_h : Element.Sizing,
 		placement : Placement,
 	}
+}
+
+## Visibility intersects paint bounds with both viewport and effective clip.
+expect {
+	paint = { position: { x: 5, y: 5 }, size: { w: 20, h: 20 } }
+	viewport = { position: { x: 0, y: 0 }, size: { w: 20, h: 20 } }
+	clip = { position: { x: 10, y: 0 }, size: { w: 20, h: 12 } }
+
+	LayoutTypes.visible_region(paint, viewport, Clipped(clip))
+		== Visible({ position: { x: 10, y: 5 }, size: { w: 10, h: 7 } })
+}
+
+## Edge-touching and zero-area paint bounds are culled.
+expect {
+	viewport = { position: { x: 0, y: 0 }, size: { w: 10, h: 10 } }
+	edge_touching = { position: { x: 10, y: 2 }, size: { w: 5, h: 5 } }
+	zero_width = { position: { x: 2, y: 2 }, size: { w: 0, h: 5 } }
+
+	LayoutTypes.visible_region(edge_touching, viewport, Unclipped) == Culled
+		and LayoutTypes.visible_region(zero_width, viewport, Unclipped) == Culled
 }

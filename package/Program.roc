@@ -1,7 +1,7 @@
 ## Platform-independent Model-View-Update state and stepping.
 import Layout
 import LayoutTypes
-import Render
+import Renderer
 import Element
 import Event
 import Drag
@@ -112,8 +112,7 @@ Program :: [].{
 		}
 
 		render! = |state, frame| {
-			commands = state.layout.to_commands(state.screen).map_err(|_| Exit(1))?
-			Render.draw_commands!(frame, commands)
+			Renderer.draw!(frame, state.layout, state.screen)
 		}
 
 		{

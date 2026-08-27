@@ -36,7 +36,6 @@ view = |model| {
 				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.gap(theme.gap)
 				.background(theme.palette.background.base.fill)
-				.font_family(theme.font)
 				.font_size(theme.font_size)
 				.font_color(theme.palette.background.base.content),
 		},
