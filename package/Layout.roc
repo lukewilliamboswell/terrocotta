@@ -21,14 +21,11 @@ import LayoutTypes exposing [
 	TextNodeData,
 	VisibleRegion.*,
 ]
-import Renderer
 import Solver
 import Stack
 import Text
 import TextMeasureCache
-import rrt.Drawing
 import rrt.Font
-import rrt.Math
 import rrt.Texture
 
 # --- Public API ---
@@ -167,25 +164,30 @@ Layout :: {
 		Ok($layout)
 	}
 
-	## Draw a solved layout directly through semantic renderer operations.
-	draw! : Layout, frame, Size => Try({}, [Exit(I64), ..])
-		where [
-			frame.rectangle! : frame, Drawing.Rectangle => {},
-			frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
-			frame.text! : frame, Drawing.Text => {},
-			frame.texture! : frame, Drawing.TextureDraw => {},
-			frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
-		]
-	draw! = |layout, frame, screen| {
-		draw_layout_direct!(layout, frame, screen).map_err(|_| Exit(1))?
-		Ok({})
-	}
-
 	## Compute conservative subtree paint bounds in node-list order.
 	## The solved node list is DFS preorder, so a reverse scan visits every
 	## child before its parent without another recursive traversal.
 	compute_paint_bounds : Layout -> Try(List(Bounds), LayoutError)
 	compute_paint_bounds = |layout| compute_layout_paint_bounds(layout)
+
+	## Expose solved traversal storage to the renderer without putting drawing
+	## behavior on Layout.
+	render_data : Layout -> {
+		nodes : List(LayoutNode),
+		text_contents : List(Str),
+		text_lines : List(Text.Line),
+		child_indices : List(U64),
+		node_ids : Dict(NodeId, U64),
+		root_indices : List(U64),
+	}
+	render_data = |layout| {
+		nodes: layout.nodes,
+		text_contents: layout.text_contents,
+		text_lines: layout.text_lines,
+		child_indices: layout.child_indices,
+		node_ids: layout.node_ids,
+		root_indices: layout.root_indices,
+	}
 
 	## Shared viewport and clip visibility used by rendering, hit testing, and
 	## debug inspection.
@@ -966,117 +968,6 @@ is_image_node = |node| match node.kind {
 	_ => Bool.False
 }
 
-# --- Rendering (Private) ---
-
-draw_layout_direct! : Layout, frame, Size => Try({}, [Exit(I64), ..])
-	where [
-		frame.rectangle! : frame, Drawing.Rectangle => {},
-		frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
-		frame.text! : frame, Drawing.Text => {},
-		frame.texture! : frame, Drawing.TextureDraw => {},
-		frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
-	]
-draw_layout_direct! = |layout, frame, screen| {
-	paint_bounds = compute_layout_paint_bounds(layout).map_err(|_| Exit(1))?
-	roots = roots_in_z_order(layout, BackToFront).map_err(|_| Exit(1))?
-	for root in roots {
-		match root.clip {
-			Unclipped => draw_node_direct!(layout, root.index, frame, screen, Unclipped, paint_bounds)?
-			Clipped(bounds) => {
-				scope_result = frame.with_scissor!(
-					bounds_to_scissor(bounds),
-					|scissor_frame| {
-						draw_node_direct!(layout, root.index, scissor_frame, screen, Clipped(bounds), paint_bounds).map_err(|_| ScopeLimit)?
-						Ok({})
-					},
-				)
-				match scope_result {
-					Ok(_) => {}
-					Err(_) => Err(Exit(1))?
-				}
-			}
-		}
-	}
-	Ok({})
-}
-
-draw_node_direct! : Layout, U64, frame, Size, Floating.Clip, List(Bounds) => Try({}, [Exit(I64), ..])
-	where [
-		frame.rectangle! : frame, Drawing.Rectangle => {},
-		frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
-		frame.text! : frame, Drawing.Text => {},
-		frame.texture! : frame, Drawing.TextureDraw => {},
-		frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
-	]
-draw_node_direct! = |layout, index, frame, screen, clip, paint_bounds| {
-	node = layout.nodes.get(index).map_err(|_| Exit(1))?
-	subtree_paint_bounds = paint_bounds.get(index).map_err(|_| Exit(1))?
-	viewport = { position: { x: 0, y: 0 }, size: screen }
-	if LayoutTypes.visible_region(subtree_paint_bounds, viewport, clip) == Culled {
-		Ok({})
-	} else {
-		context = renderer_context(layout, node, clip, subtree_paint_bounds).map_err(|_| Exit(1))?
-		match context.node {
-			Box(box) => {
-				Renderer.draw_background!(frame, context.placement, box.config)
-				child_clip = effective_child_clip(context, box)
-				draw_inner! = |inner_frame| {
-					parent = layout.nodes.get(index).map_err(|_| Exit(1))?
-					for offset in 0..<parent.child_count {
-						child_index = layout.child_indices.get(parent.child_start + offset).map_err(|_| Exit(1))?
-						draw_node_direct!(layout, child_index, inner_frame, screen, child_clip, paint_bounds)?
-					}
-					Renderer.draw_border!(inner_frame, context.placement, box.config)
-					Ok({})
-				}
-				match box.clip_scope {
-					NoClip => draw_inner!(frame)?
-					ClipScope(_) => {
-						clip_bounds = match child_clip {
-							Clipped(bounds) => bounds
-							Unclipped => context.placement.bounds
-						}
-						scope_result = frame.with_scissor!(
-							bounds_to_scissor(clip_bounds),
-							|scissor_frame| {
-								draw_inner!(scissor_frame).map_err(|_| ScopeLimit)?
-								Ok({})
-							},
-						)
-						match scope_result {
-							Ok(_) => {}
-							Err(_) => Err(Exit(1))?
-						}
-					}
-				}
-			}
-			Text(text) => {
-				text_data_result = match node.kind {
-					TextNode(text_data) => Ok(text_data)
-					_ => Err(Exit(1))
-				}
-				text_data = text_data_result?
-				content = layout.text_contents.get(text_data.content_index).map_err(|_| Exit(1))?
-				for line_offset in 0..<text.line_count {
-					line = layout.text_lines.get(text_data.lines_start + line_offset).map_err(|_| Exit(1))?
-					placement = text_line_placement(context.placement, text.config, line, line_offset)
-					Renderer.draw_text_line!(frame, placement, Text.line_text(content, line), text.config, text_data.font)
-				}
-			}
-			Image(image) => Renderer.draw_image!(frame, context.placement, image)
-		}
-		Ok({})
-	}
-}
-
-bounds_to_scissor : Bounds -> { x : F32, y : F32, width : F32, height : F32 }
-bounds_to_scissor = |bounds| {
-	x: bounds.position.x,
-	y: bounds.position.y,
-	width: bounds.size.w,
-	height: bounds.size.h,
-}
-
 text_align_offset : Element.TextAlign, F32, F32 -> F32
 text_align_offset = |align, box_width, text_width| match align {
 	Left => 0
@@ -1084,90 +975,13 @@ text_align_offset = |align, box_width, text_width| match align {
 	Right => box_width - text_width
 }
 
-text_line_placement : Renderer.Placement, Text.Config, Text.Line, U64 -> Renderer.Placement
-text_line_placement = |placement, config, line, line_offset| {
-	..placement,
-	bounds: {
-		position: {
-			x: placement.bounds.position.x + text_align_offset(config.align, placement.bounds.size.w, line.width),
-			y: placement.bounds.position.y + line_offset.to_f32() * line.height,
-		},
-		size: { w: line.width, h: line.height },
+text_line_bounds : Bounds, Text.Config, Text.Line, U64 -> Bounds
+text_line_bounds = |bounds, config, line, line_offset| {
+	position: {
+		x: bounds.position.x + text_align_offset(config.align, bounds.size.w, line.width),
+		y: bounds.position.y + line_offset.to_f32() * line.height,
 	},
-}
-
-## Build public settled context only after culling. Text content and line slices
-## remain private and are not read until terminal realization.
-renderer_context : Layout, LayoutNode, Floating.Clip, Bounds -> Try(Renderer.Context, LayoutError)
-renderer_context = |layout, node, clip, paint_bounds| {
-	bounds = node_own_paint_bounds(node)
-	context_node = match node.kind {
-		BoxNode(box) => {
-			clips = (box.overflow.x != Visible or box.overflow.y != Visible)
-				and children_escape_bounds(layout, node, bounds)?
-			clip_scope = if clips {
-				ClipScope({ start: { bounds }, end: {} })
-			} else {
-				NoClip
-			}
-			Box({ config: box, clip_scope })
-		}
-		TextNode(text) => Text({ config: text.config, line_count: text.lines_count })
-		ImageNode(image) => Image(image)
-	}
-	Ok({
-		placement: { id: node.id, bounds, clip },
-		paint_bounds,
-		node: context_node,
-	})
-}
-
-effective_child_clip : Renderer.Context, Renderer.BoxContext -> Floating.Clip
-effective_child_clip = |context, box| {
-	if box.config.overflow.x != Visible or box.config.overflow.y != Visible {
-		match context.placement.clip {
-			Unclipped => Clipped(context.placement.bounds)
-			Clipped(ancestor_bounds) => Clipped(ancestor_bounds.intersection(context.placement.bounds))
-		}
-	} else {
-		context.placement.clip
-	}
-}
-
-## Check direct child sublayouts against supplied clipping bounds.
-children_escape_bounds : Layout, LayoutNode, Bounds -> Try(Bool, LayoutError)
-children_escape_bounds = |layout, box_node, bounds| {
-	var $escapes = Bool.False
-	for offset in 0..<box_node.child_count {
-		child_index = layout.child_indices.get(box_node.child_start + offset)?
-		if sublayout_escapes_bounds(layout, child_index, bounds)? {
-			$escapes = Bool.True
-		}
-	}
-	Ok($escapes)
-}
-
-## Check visible-overflow descendants until another clipping box contains them.
-sublayout_escapes_bounds : Layout, U64, Bounds -> Try(Bool, LayoutError)
-sublayout_escapes_bounds = |layout, index, bounds| {
-	node = layout.nodes.get(index)?
-	node_bounds = layout_node_bounds(node)
-	outside = !bounds.contains_bounds(node_bounds)
-	if outside {
-		Ok(Bool.True)
-	} else {
-		match node.kind {
-			BoxNode(box) => {
-				child_clips = box.overflow.x != Visible or box.overflow.y != Visible
-				if child_clips {
-					Ok(Bool.False)
-				} else {
-					children_escape_bounds(layout, node, bounds)
-				}
-			}
-			_ => Ok(Bool.False)
-		}
-	}
+	size: { w: line.width, h: line.height },
 }
 
 ## Check whether a node intersects every clipping ancestor.
@@ -1294,7 +1108,7 @@ expect {
 	}
 }
 
-## A clipping box exposes the settled clip scope consumed by direct traversal.
+## Clipping overflow with an escaping descendant requires a host scissor scope.
 expect {
 	root_cfg = fixed_cfg(100, 60)
 		.direction(Col)
@@ -1305,12 +1119,12 @@ expect {
 	match build_and_solve(root_cfg, [child_cfg], { w: 200, h: 200 }) {
 		Ok(layout) => {
 			root = layout.nodes.get(0)?
-			paint_bounds = layout.compute_paint_bounds()?
-			root_paint_bounds = paint_bounds.get(0)?
-			context = renderer_context(layout, root, Unclipped, root_paint_bounds)?
-			match context.node {
-				Box({ clip_scope: ClipScope(scope), .. }) => scope.start.bounds
-					== { position: { x: 0, y: 0 }, size: { w: 100, h: 60 } }
+			child = layout.nodes.get(1)?
+			match root.kind {
+				BoxNode(box) => box.overflow.x != Visible
+					and box.overflow.y != Visible
+						and layout_node_bounds(root) == { position: { x: 0, y: 0 }, size: { w: 100, h: 60 } }
+							and !layout_node_bounds(root).contains_bounds(layout_node_bounds(child))
 				_ => Bool.False
 			}
 		}
@@ -1538,15 +1352,10 @@ text_line_positions = |layout| {
 		}
 		text_data = text_data_result?
 		content = layout.text_contents.get(text_data.content_index)?
-		placement = {
-			id: node.id,
-			bounds: layout_node_bounds(node),
-			clip: Unclipped,
-		}
 		var $positions = []
 		for line_offset in 0..<text_data.lines_count {
 			line = layout.text_lines.get(text_data.lines_start + line_offset)?
-			line_bounds = text_line_placement(placement, text_data.config, line, line_offset).bounds
+			line_bounds = text_line_bounds(layout_node_bounds(node), text_data.config, line, line_offset)
 			$positions = $positions.append({
 				x: line_bounds.position.x,
 				y: line_bounds.position.y,

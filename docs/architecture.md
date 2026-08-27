@@ -140,11 +140,11 @@ The layout implementation is a direct port of [Clay](https://github.com/nicbarke
 Rendering starts after layout has been solved. At that point, every layout node
 has concrete position and size data.
 
-`Layout.draw!` traverses the solved node list in paint order and sends semantic
+`Renderer.draw!` traverses the solved node list in paint order and sends semantic
 operations directly to the host frame:
 
 ```roc
-layout.draw!(frame, screen)
+Renderer.draw!(frame, layout, screen)
 ```
 
 The traversal computes conservative subtree paint bounds for culling, preserves

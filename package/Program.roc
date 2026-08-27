@@ -1,6 +1,7 @@
 ## Platform-independent Model-View-Update state and stepping.
 import Layout
 import LayoutTypes
+import Renderer
 import Element
 import Event
 import Drag
@@ -111,7 +112,7 @@ Program :: [].{
 		}
 
 		render! = |state, frame| {
-			state.layout.draw!(frame, state.screen)
+			Renderer.draw!(frame, state.layout, state.screen)
 		}
 
 		{
