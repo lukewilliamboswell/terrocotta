@@ -22,6 +22,7 @@ import LayoutTypes exposing [
 	VisibleRegion.*,
 ]
 import Render
+import Renderer
 import Solver
 import Stack
 import Text
@@ -996,94 +997,177 @@ emit_render_commands = |layout, screen| {
 emit_node_commands : Layout, U64, Size, Floating.Clip, List(Bounds), List(Render.Command) -> Try(List(Render.Command), LayoutError)
 emit_node_commands = |layout, index, screen, clip, paint_bounds, commands| {
 	node = layout.nodes.get(index)?
-	node_bounds = node_own_paint_bounds(node)
 	subtree_paint_bounds = paint_bounds.get(index)?
 	viewport = { position: { x: 0, y: 0 }, size: screen }
 	if LayoutTypes.visible_region(subtree_paint_bounds, viewport, clip) == Culled {
 		Ok(commands)
 	} else {
-		var $commands = commands
-		match node.kind {
-			BoxNode(box) => {
-				if box.background.a > 0 {
-					$commands = $commands.append(
-						if box.radius > 0 {
-							RoundedRectangle({ x: node_bounds.position.x, y: node_bounds.position.y, width: node_bounds.size.w, height: node_bounds.size.h, radius: box.radius, color: box.background })
-						} else {
-							Rectangle({ x: node_bounds.position.x, y: node_bounds.position.y, width: node_bounds.size.w, height: node_bounds.size.h, color: box.background })
-						},
-					)
+		context = renderer_context(layout, node, clip, subtree_paint_bounds)?
+		emit_context_commands(layout, index, screen, paint_bounds, context, commands)
+	}
+}
+
+## Build public settled context only after culling. Text content and line slices
+## remain private and are not read until terminal realization.
+renderer_context : Layout, LayoutNode, Floating.Clip, Bounds -> Try(Renderer.Context, LayoutError)
+renderer_context = |layout, node, clip, paint_bounds| {
+	bounds = node_own_paint_bounds(node)
+	context_node = match node.kind {
+		BoxNode(box) => {
+			clips = (box.overflow.x != Visible or box.overflow.y != Visible)
+				and children_escape_bounds(layout, node, bounds)?
+			clip_scope = if clips {
+				ClipScope({ start: { bounds }, end: {} })
+			} else {
+				NoClip
+			}
+			Box({ config: box, clip_scope })
+		}
+		TextNode(text) => Text({ config: text.config, line_count: text.lines_count })
+		ImageNode(image) => Image(image)
+	}
+	Ok({
+		placement: { id: node.id, bounds, clip },
+		paint_bounds,
+		node: context_node,
+	})
+}
+
+## Apply the existing box paint wrappers around terminal realization.
+emit_context_commands : Layout, U64, Size, List(Bounds), Renderer.Context, List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_context_commands = |layout, index, screen, paint_bounds, context, commands| {
+	match context.node {
+		Box(box) => {
+			var $commands = append_background_command(commands, context.placement, box.config)
+			match box.clip_scope {
+				ClipScope(scope) => {
+					bounds = scope.start.bounds
+					$commands = $commands.append(ScissorStart({ x: bounds.position.x, y: bounds.position.y, width: bounds.size.w, height: bounds.size.h }))
 				}
-				clips = (box.overflow.x != Visible or box.overflow.y != Visible)
-					and children_escape_bounds(layout, node, node_bounds)?
-				if clips {
-					$commands = $commands.append(ScissorStart({ x: node_bounds.position.x, y: node_bounds.position.y, width: node_bounds.size.w, height: node_bounds.size.h }))
-				}
-				child_clip = if box.overflow.x != Visible or box.overflow.y != Visible {
-					match clip {
-						Unclipped => Clipped(node_bounds)
-						Clipped(ancestor_bounds) => Clipped(ancestor_bounds.intersection(node_bounds))
-					}
-				} else {
-					clip
-				}
-				for offset in 0..<node.child_count {
-					child_index = layout.child_indices.get(node.child_start + offset)?
-					$commands = emit_node_commands(layout, child_index, screen, child_clip, paint_bounds, $commands)?
-				}
-				border_total = box.border.left + box.border.right + box.border.top + box.border.bottom
-				if box.border.color.a > 0 and border_total > 0 {
-					$commands = $commands.append(
-						Border({
-							x: node_bounds.position.x,
-							y: node_bounds.position.y,
-							width: node_bounds.size.w,
-							height: node_bounds.size.h,
-							color: box.border.color,
-							left: box.border.left,
-							right: box.border.right,
-							top: box.border.top,
-							bottom: box.border.bottom,
-							radius: box.radius,
-						}),
-					)
-				}
-				if clips {
+				NoClip => {}
+			}
+			child_clip = effective_child_clip(context, box)
+			$commands = emit_terminal_commands(layout, index, screen, child_clip, paint_bounds, context, $commands)?
+			$commands = append_border_command($commands, context.placement, box.config)
+			match box.clip_scope {
+				ClipScope(_) => {
 					$commands = $commands.append(ScissorEnd)
 				}
+				NoClip => {}
 			}
-			TextNode(text_data) => {
-				content = layout.text_contents.get(text_data.content_index)?
-				font = text_data.font
-				for line_offset in 0..<text_data.lines_count {
-					line = layout.text_lines.get(text_data.lines_start + line_offset)?
-					config = text_data.config
-					$commands = $commands.append(
-						Text({
-							x: node.position.x + text_align_offset(config.align, node.size.w, line.width),
-							y: node.position.y + line_offset.to_f32() * line.height,
-							text: Text.line_text(content, line),
-							font_size: config.font_size,
-							spacing: config.spacing,
-							color: config.color,
-							font,
-						}),
-					)
-				}
-			}
-			ImageNode({ texture }) => {
-				$commands = $commands.append(
-					Image({
-						x: node.position.x,
-						y: node.position.y,
-						width: node.size.w,
-						height: node.size.h,
-						texture: texture,
-					}),
-				)
-			}
+			Ok($commands)
 		}
-		Ok($commands)
+		_ => emit_terminal_commands(layout, index, screen, context.placement.clip, paint_bounds, context, commands)
+	}
+}
+
+## The terminal performs only child, text-line, or image realization.
+emit_terminal_commands : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Context, List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_terminal_commands = |layout, index, screen, child_clip, paint_bounds, context, commands| {
+	match context.node {
+		Box(_) => emit_child_commands(layout, index, screen, child_clip, paint_bounds, commands)
+		Text(text) => emit_text_line_commands(layout, index, context.placement, text, commands)
+		Image(image) => Ok(commands.append(
+			Image({
+				x: context.placement.bounds.position.x,
+				y: context.placement.bounds.position.y,
+				width: context.placement.bounds.size.w,
+				height: context.placement.bounds.size.h,
+				texture: image.texture,
+			}),
+		))
+	}
+}
+
+emit_child_commands : Layout, U64, Size, Floating.Clip, List(Bounds), List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_child_commands = |layout, parent_index, screen, child_clip, paint_bounds, commands| {
+	parent = layout.nodes.get(parent_index)?
+	var $commands = commands
+	for offset in 0..<parent.child_count {
+		child_index = layout.child_indices.get(parent.child_start + offset)?
+		$commands = emit_node_commands(layout, child_index, screen, child_clip, paint_bounds, $commands)?
+	}
+	Ok($commands)
+}
+
+emit_text_line_commands : Layout, U64, Renderer.Placement, Renderer.TextContext, List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_text_line_commands = |layout, index, placement, text, commands| {
+	node = layout.nodes.get(index)?
+	text_data_result = match node.kind {
+		TextNode(text_data) => Ok(text_data)
+		_ => Err(InternalError)
+	}
+	text_data = text_data_result?
+	content = layout.text_contents.get(text_data.content_index)?
+	font = text_data.font
+	var $commands = commands
+	for line_offset in 0..<text.line_count {
+		line = layout.text_lines.get(text_data.lines_start + line_offset)?
+		config = text.config
+		$commands = $commands.append(
+			Text({
+				x: placement.bounds.position.x + text_align_offset(config.align, placement.bounds.size.w, line.width),
+				y: placement.bounds.position.y + line_offset.to_f32() * line.height,
+				text: Text.line_text(content, line),
+				font_size: config.font_size,
+				spacing: config.spacing,
+				color: config.color,
+				font,
+			}),
+		)
+	}
+	Ok($commands)
+}
+
+effective_child_clip : Renderer.Context, Renderer.BoxContext -> Floating.Clip
+effective_child_clip = |context, box| {
+	if box.config.overflow.x != Visible or box.config.overflow.y != Visible {
+		match context.placement.clip {
+			Unclipped => Clipped(context.placement.bounds)
+			Clipped(ancestor_bounds) => Clipped(ancestor_bounds.intersection(context.placement.bounds))
+		}
+	} else {
+		context.placement.clip
+	}
+}
+
+append_background_command : List(Render.Command), Renderer.Placement, LayoutTypes.BoxNodeData -> List(Render.Command)
+append_background_command = |commands, placement, box| {
+	if box.background.a > 0 {
+		bounds = placement.bounds
+		commands.append(
+			if box.radius > 0 {
+				RoundedRectangle({ x: bounds.position.x, y: bounds.position.y, width: bounds.size.w, height: bounds.size.h, radius: box.radius, color: box.background })
+			} else {
+				Rectangle({ x: bounds.position.x, y: bounds.position.y, width: bounds.size.w, height: bounds.size.h, color: box.background })
+			},
+		)
+	} else {
+		commands
+	}
+}
+
+append_border_command : List(Render.Command), Renderer.Placement, LayoutTypes.BoxNodeData -> List(Render.Command)
+append_border_command = |commands, placement, box| {
+	border_total = box.border.left + box.border.right + box.border.top + box.border.bottom
+	if box.border.color.a > 0 and border_total > 0 {
+		bounds = placement.bounds
+		commands.append(
+			Border({
+				x: bounds.position.x,
+				y: bounds.position.y,
+				width: bounds.size.w,
+				height: bounds.size.h,
+				color: box.border.color,
+				left: box.border.left,
+				right: box.border.right,
+				top: box.border.top,
+				bottom: box.border.bottom,
+				radius: box.radius,
+			}),
+		)
+	} else {
+		commands
 	}
 }
 
@@ -1436,6 +1520,52 @@ build_button_text_layout = |content, preferred_w, line_h, words, screen| {
 	$layout = add_test_text_with_line_height($layout, content, preferred_w, line_h, words)?
 	$layout = close_box($layout)?
 	$layout.solve(screen)
+}
+
+## Culling suppresses terminal text lookup, so malformed private text storage
+## on a fully offscreen subtree is not observed.
+expect {
+	build = || {
+		words = [test_word(0, 4, 4)]
+		var $layout = build_text_test_layout(test_text_cfg(Words), "text", 4, words, { w: 100, h: 100 })?
+		root = $layout.nodes.get(0)?
+		text_node = $layout.nodes.get(1)?
+		bad_kind_result = match text_node.kind {
+			TextNode(text_data) => Ok(TextNode({ ..text_data, content_index: 99 }))
+			_ => Err(InternalError)
+		}
+		bad_kind = bad_kind_result?
+		var $nodes = $layout.nodes.set(0, { ..root, position: { x: -200, y: 0 } })?
+		$nodes = $nodes.set(1, { ..text_node, kind: bad_kind, position: { x: -200, y: 0 } })?
+		{ ..$layout, nodes: $nodes }.to_commands({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok([]) => Bool.True
+		_ => Bool.False
+	}
+}
+
+## A visible text node performs its private content lookup in the terminal and
+## propagates a missing-content error.
+expect {
+	build = || {
+		words = [test_word(0, 4, 4)]
+		var $layout = build_text_test_layout(test_text_cfg(Words), "text", 4, words, { w: 100, h: 100 })?
+		text_node = $layout.nodes.get(1)?
+		bad_kind_result = match text_node.kind {
+			TextNode(text_data) => Ok(TextNode({ ..text_data, content_index: 99 }))
+			_ => Err(InternalError)
+		}
+		bad_kind = bad_kind_result?
+		nodes = $layout.nodes.set(1, { ..text_node, kind: bad_kind })?
+		{ ..$layout, nodes }.to_commands({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Err(OutOfBounds) => Bool.True
+		_ => Bool.False
+	}
 }
 
 build_nested_fit_text_layout : Element.BoxConfig, Str, F32, List(Text.Word), Size -> Try(Layout, LayoutError)
@@ -1796,6 +1926,57 @@ expect {
 	match build() {
 		Ok([Rectangle(bounds)]) =>
 			bounds.x == -25 and bounds.y == 15 and bounds.width == 30 and bounds.height == 20
+		_ => Bool.False
+	}
+}
+
+## Terminal extraction preserves empty transparent-box output.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, fixed_cfg(10, 10))?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		$layout.to_commands({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok([]) => Bool.True
+		_ => Bool.False
+	}
+}
+
+## Multiple roots retain back-to-front z-order independently of declaration
+## order.
+expect {
+	high_floating = {
+		..Element.default_floating_config,
+		z_index: 10,
+	}
+	low_floating = {
+		..Element.default_floating_config,
+		z_index: -10,
+	}
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box(
+			$layout,
+			Id("terminal-high"),
+			fixed_cfg(10, 10).background(Color.white).floating(Floating({ target: Root, config: high_floating })),
+		)?
+		$layout = close_box($layout)?
+		$layout = open_box(
+			$layout,
+			Id("terminal-low"),
+			fixed_cfg(10, 10).background(Color.gray).floating(Floating({ target: Root, config: low_floating })),
+		)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		$layout.to_commands({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok([Rectangle(low), Rectangle(high)]) => low.color == Color.gray and high.color == Color.white
 		_ => Bool.False
 	}
 }
