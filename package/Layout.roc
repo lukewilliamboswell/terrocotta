@@ -831,13 +831,6 @@ node_own_paint_bounds = |node| {
 	}
 }
 
-## Compute conservative subtree paint bounds with one reverse DFS-order scan.
-compute_layout_paint_bounds : Layout -> Try(List(Bounds), Layout.LayoutError)
-compute_layout_paint_bounds = |layout| {
-	result = compute_layout_paint_data(layout)?
-	Ok(result.paint_bounds)
-}
-
 ## Compute paint bounds and per-box scissor need in one reverse pass.
 ## `needs_clip[i]` is true when the box at `i` has overflow != Visible
 ## and any direct child's paint escapes its own bounds. This is exactly
