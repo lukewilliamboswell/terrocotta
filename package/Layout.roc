@@ -969,41 +969,45 @@ text_align_offset = |align, box_width, text_width| match align {
 
 emit_render_commands : Layout, Size -> Try(List(Render.Command), LayoutError)
 emit_render_commands = |layout, screen| {
-	var $commands = []
-	paint_bounds = compute_layout_paint_bounds(layout)?
-	for root in roots_in_z_order(layout, BackToFront)? {
-		match root.clip {
-			Unclipped => {
-				$commands = emit_node_commands(layout, root.index, screen, Unclipped, paint_bounds, $commands)?
-			}
-			Clipped(bounds) => {
-				$commands = $commands.append(
-					ScissorStart({
-						x: bounds.position.x,
-						y: bounds.position.y,
-						width: bounds.size.w,
-						height: bounds.size.h,
-					}),
-				)
-				$commands = emit_node_commands(layout, root.index, screen, Clipped(bounds), paint_bounds, $commands)?
-				$commands = $commands.append(ScissorEnd)
-			}
-		}
-	}
-	Ok($commands)
+	realize_render_output(layout, screen, Renderer.command_collector)
 }
 
-## Emit one node and its descendants in clipping-safe draw order.
-emit_node_commands : Layout, U64, Size, Floating.Clip, List(Bounds), List(Render.Command) -> Try(List(Render.Command), LayoutError)
-emit_node_commands = |layout, index, screen, clip, paint_bounds, commands| {
+## Instantiate the same realization path with `{}` output. The host Draw
+## backend will replace this no-op capability in Phase 4.
+realize_noop_output : Layout, Size -> Try({}, LayoutError)
+realize_noop_output = |layout, screen| realize_render_output(layout, screen, Renderer.noop)
+
+## Realize every root through a generic semantic renderer capability.
+realize_render_output : Layout, Size, Renderer.Capability(output) -> Try(output, LayoutError)
+realize_render_output = |layout, screen, renderer| {
+	paint_bounds = compute_layout_paint_bounds(layout)?
+	var $output = Renderer.empty(renderer)
+	for root in roots_in_z_order(layout, BackToFront)? {
+		root_output = match root.clip {
+			Unclipped => realize_node_output(layout, root.index, screen, Unclipped, paint_bounds, renderer)
+			Clipped(bounds) => {
+				before = Renderer.begin_clip(renderer, { bounds: bounds })
+				inner = realize_node_output(layout, root.index, screen, Clipped(bounds), paint_bounds, renderer)?
+				after = Renderer.end_clip(renderer, {})
+				Ok(Renderer.combine(renderer, before, Renderer.combine(renderer, inner, after)))
+			}
+		}?
+		$output = Renderer.combine(renderer, $output, root_output)
+	}
+	Ok($output)
+}
+
+## Realize one node and its descendants in clipping-safe paint order.
+realize_node_output : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Capability(output) -> Try(output, LayoutError)
+realize_node_output = |layout, index, screen, clip, paint_bounds, renderer| {
 	node = layout.nodes.get(index)?
 	subtree_paint_bounds = paint_bounds.get(index)?
 	viewport = { position: { x: 0, y: 0 }, size: screen }
 	if LayoutTypes.visible_region(subtree_paint_bounds, viewport, clip) == Culled {
-		Ok(commands)
+		Ok(Renderer.empty(renderer))
 	} else {
 		context = renderer_context(layout, node, clip, subtree_paint_bounds)?
-		emit_context_commands(layout, index, screen, paint_bounds, context, commands)
+		realize_context_output(layout, index, screen, paint_bounds, context, renderer)
 	}
 }
 
@@ -1033,65 +1037,53 @@ renderer_context = |layout, node, clip, paint_bounds| {
 	})
 }
 
-## Apply the existing box paint wrappers around terminal realization.
-emit_context_commands : Layout, U64, Size, List(Bounds), Renderer.Context, List(Render.Command) -> Try(List(Render.Command), LayoutError)
-emit_context_commands = |layout, index, screen, paint_bounds, context, commands| {
+## Compose the existing box paint wrappers around terminal realization.
+realize_context_output : Layout, U64, Size, List(Bounds), Renderer.Context, Renderer.Capability(output) -> Try(output, LayoutError)
+realize_context_output = |layout, index, screen, paint_bounds, context, renderer| {
 	match context.node {
 		Box(box) => {
-			var $commands = append_background_command(commands, context.placement, box.config)
-			match box.clip_scope {
-				ClipScope(scope) => {
-					bounds = scope.start.bounds
-					$commands = $commands.append(ScissorStart({ x: bounds.position.x, y: bounds.position.y, width: bounds.size.w, height: bounds.size.h }))
-				}
-				NoClip => {}
+			background = Renderer.background(renderer, context.placement, box.config)
+			clip_start = match box.clip_scope {
+				ClipScope(scope) => Renderer.begin_clip(renderer, scope.start)
+				NoClip => Renderer.empty(renderer)
 			}
 			child_clip = effective_child_clip(context, box)
-			$commands = emit_terminal_commands(layout, index, screen, child_clip, paint_bounds, context, $commands)?
-			$commands = append_border_command($commands, context.placement, box.config)
-			match box.clip_scope {
-				ClipScope(_) => {
-					$commands = $commands.append(ScissorEnd)
-				}
-				NoClip => {}
+			inner = realize_terminal_output(layout, index, screen, child_clip, paint_bounds, context, renderer)?
+			border = Renderer.border(renderer, context.placement, box.config)
+			clip_end = match box.clip_scope {
+				ClipScope(scope) => Renderer.end_clip(renderer, scope.end)
+				NoClip => Renderer.empty(renderer)
 			}
-			Ok($commands)
+			Ok(combine_outputs(renderer, [background, clip_start, inner, border, clip_end]))
 		}
-		_ => emit_terminal_commands(layout, index, screen, context.placement.clip, paint_bounds, context, commands)
+		_ => realize_terminal_output(layout, index, screen, context.placement.clip, paint_bounds, context, renderer)
 	}
 }
 
 ## The terminal performs only child, text-line, or image realization.
-emit_terminal_commands : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Context, List(Render.Command) -> Try(List(Render.Command), LayoutError)
-emit_terminal_commands = |layout, index, screen, child_clip, paint_bounds, context, commands| {
+realize_terminal_output : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Context, Renderer.Capability(output) -> Try(output, LayoutError)
+realize_terminal_output = |layout, index, screen, child_clip, paint_bounds, context, renderer| {
 	match context.node {
-		Box(_) => emit_child_commands(layout, index, screen, child_clip, paint_bounds, commands)
-		Text(text) => emit_text_line_commands(layout, index, context.placement, text, commands)
-		Image(image) => Ok(commands.append(
-			Image({
-				x: context.placement.bounds.position.x,
-				y: context.placement.bounds.position.y,
-				width: context.placement.bounds.size.w,
-				height: context.placement.bounds.size.h,
-				texture: image.texture,
-			}),
-		))
+		Box(_) => realize_child_output(layout, index, screen, child_clip, paint_bounds, renderer)
+		Text(text) => realize_text_line_output(layout, index, context.placement, text, renderer)
+		Image(image) => Ok(Renderer.image(renderer, context.placement, image))
 	}
 }
 
-emit_child_commands : Layout, U64, Size, Floating.Clip, List(Bounds), List(Render.Command) -> Try(List(Render.Command), LayoutError)
-emit_child_commands = |layout, parent_index, screen, child_clip, paint_bounds, commands| {
+realize_child_output : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Capability(output) -> Try(output, LayoutError)
+realize_child_output = |layout, parent_index, screen, child_clip, paint_bounds, renderer| {
 	parent = layout.nodes.get(parent_index)?
-	var $commands = commands
+	var $output = Renderer.empty(renderer)
 	for offset in 0..<parent.child_count {
 		child_index = layout.child_indices.get(parent.child_start + offset)?
-		$commands = emit_node_commands(layout, child_index, screen, child_clip, paint_bounds, $commands)?
+		child_output = realize_node_output(layout, child_index, screen, child_clip, paint_bounds, renderer)?
+		$output = Renderer.combine(renderer, $output, child_output)
 	}
-	Ok($commands)
+	Ok($output)
 }
 
-emit_text_line_commands : Layout, U64, Renderer.Placement, Renderer.TextContext, List(Render.Command) -> Try(List(Render.Command), LayoutError)
-emit_text_line_commands = |layout, index, placement, text, commands| {
+realize_text_line_output : Layout, U64, Renderer.Placement, Renderer.TextContext, Renderer.Capability(output) -> Try(output, LayoutError)
+realize_text_line_output = |layout, index, placement, text, renderer| {
 	node = layout.nodes.get(index)?
 	text_data_result = match node.kind {
 		TextNode(text_data) => Ok(text_data)
@@ -1100,23 +1092,33 @@ emit_text_line_commands = |layout, index, placement, text, commands| {
 	text_data = text_data_result?
 	content = layout.text_contents.get(text_data.content_index)?
 	font = text_data.font
-	var $commands = commands
+	var $output = Renderer.empty(renderer)
 	for line_offset in 0..<text.line_count {
 		line = layout.text_lines.get(text_data.lines_start + line_offset)?
 		config = text.config
-		$commands = $commands.append(
-			Text({
-				x: placement.bounds.position.x + text_align_offset(config.align, placement.bounds.size.w, line.width),
-				y: placement.bounds.position.y + line_offset.to_f32() * line.height,
-				text: Text.line_text(content, line),
-				font_size: config.font_size,
-				spacing: config.spacing,
-				color: config.color,
-				font,
-			}),
-		)
+		line_placement = {
+			..placement,
+			bounds: {
+				position: {
+					x: placement.bounds.position.x + text_align_offset(config.align, placement.bounds.size.w, line.width),
+					y: placement.bounds.position.y + line_offset.to_f32() * line.height,
+				},
+				size: { w: line.width, h: line.height },
+			},
+		}
+		line_output = Renderer.text_line(renderer, line_placement, Text.line_text(content, line), config, font)
+		$output = Renderer.combine(renderer, $output, line_output)
 	}
-	Ok($commands)
+	Ok($output)
+}
+
+combine_outputs : Renderer.Capability(output), List(output) -> output
+combine_outputs = |renderer, outputs| {
+	var $combined = Renderer.empty(renderer)
+	for output in outputs {
+		$combined = Renderer.combine(renderer, $combined, output)
+	}
+	$combined
 }
 
 effective_child_clip : Renderer.Context, Renderer.BoxContext -> Floating.Clip
@@ -1128,46 +1130,6 @@ effective_child_clip = |context, box| {
 		}
 	} else {
 		context.placement.clip
-	}
-}
-
-append_background_command : List(Render.Command), Renderer.Placement, LayoutTypes.BoxNodeData -> List(Render.Command)
-append_background_command = |commands, placement, box| {
-	if box.background.a > 0 {
-		bounds = placement.bounds
-		commands.append(
-			if box.radius > 0 {
-				RoundedRectangle({ x: bounds.position.x, y: bounds.position.y, width: bounds.size.w, height: bounds.size.h, radius: box.radius, color: box.background })
-			} else {
-				Rectangle({ x: bounds.position.x, y: bounds.position.y, width: bounds.size.w, height: bounds.size.h, color: box.background })
-			},
-		)
-	} else {
-		commands
-	}
-}
-
-append_border_command : List(Render.Command), Renderer.Placement, LayoutTypes.BoxNodeData -> List(Render.Command)
-append_border_command = |commands, placement, box| {
-	border_total = box.border.left + box.border.right + box.border.top + box.border.bottom
-	if box.border.color.a > 0 and border_total > 0 {
-		bounds = placement.bounds
-		commands.append(
-			Border({
-				x: bounds.position.x,
-				y: bounds.position.y,
-				width: bounds.size.w,
-				height: bounds.size.h,
-				color: box.border.color,
-				left: box.border.left,
-				right: box.border.right,
-				top: box.border.top,
-				bottom: box.border.bottom,
-				radius: box.radius,
-			}),
-		)
-	} else {
-		commands
 	}
 }
 
@@ -1566,6 +1528,26 @@ expect {
 		Err(OutOfBounds) => Bool.True
 		_ => Bool.False
 	}
+}
+
+## The complete node, child, text, and image traversal specializes to `{}`
+## through the same generic realization functions.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box(
+			$layout,
+			Auto,
+			fixed_cfg(40, 20).background(Color.gray).overflow(Hidden, Hidden),
+		)?
+		$layout = add_test_text($layout, "text", 4, [test_word(0, 4, 4)])?
+		$layout = add_image($layout, 100, Texture.stub)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		realize_noop_output($layout, { w: 100, h: 100 })
+	}
+
+	build() == Ok({})
 }
 
 build_nested_fit_text_layout : Element.BoxConfig, Str, F32, List(Text.Word), Size -> Try(Layout, LayoutError)

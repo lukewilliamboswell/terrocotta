@@ -10,6 +10,7 @@ package
 		Layout,
 		Program,
 		Render,
+		Renderer,
 		TextMeasureCache,
 	]
 	{
