@@ -49,6 +49,14 @@ Event := [].{
 		target : EventTarget,
 	}
 
+	TextControlKey : [KeyLeft, KeyRight, KeyHome, KeyEnd, KeyBackspace, KeyDelete]
+
+	## One cycle-local batch of committed text and control-key presses.
+	TextInputEvent : {
+		codepoints : List(U32),
+		keys : List(TextControlKey),
+	}
+
 	Handler(msg) : [
 		OnClick(msg),
 		OnHover(msg),
@@ -64,5 +72,6 @@ Event := [].{
 		OnKeyPressed(Keys.Key, msg),
 		OnKeyDown(Keys.Key, msg),
 		OnKeyReleased(Keys.Key, msg),
+		OnTextInput(Box(TextInputEvent -> msg)),
 	]
 }

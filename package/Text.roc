@@ -290,7 +290,8 @@ wrap_words = |width, words, content, space_width, line_h| {
 			$line_width = 0
 			$has_word = Bool.False
 		} else {
-			should_wrap = $has_word and width > 0 and $line_width + word.width > width
+			candidate = trim_line(content, $line_start, word.start + word.len, $line_width + word.width, space_width, line_h)
+			should_wrap = $has_word and width > 0 and candidate.width > width
 			if should_wrap {
 				$lines = $lines.append(trim_line(content, $line_start, $line_end, $line_width, space_width, line_h))
 				$line_start = word.start
@@ -384,6 +385,24 @@ expect {
 				and line_width_at(lines, 0) == 2
 					and line_text_at("aa b", lines, 1) == "b"
 						and line_width_at(lines, 1) == 2
+}
+
+## A terminal space discarded during rendering does not force the last word to wrap.
+expect {
+	words = [test_word(0, 4, 4), test_word(4, 4, 4)]
+	lines = Text.wrap("foo bar ", test_config(Words), 1, 10, 7, words)
+	lines.len() == 1
+		and line_text_at("foo bar ", lines, 0) == "foo bar"
+			and line_width_at(lines, 0) == 7
+}
+
+## Terminal-space text still wraps when its visible content exceeds the width.
+expect {
+	words = [test_word(0, 4, 4), test_word(4, 4, 4)]
+	lines = Text.wrap("foo bar ", test_config(Words), 1, 10, 6, words)
+	lines.len() == 2
+		and line_text_at("foo bar ", lines, 0) == "foo"
+			and line_text_at("foo bar ", lines, 1) == "bar"
 }
 
 ## A single long word wider than the resolved width stays one overflowing line.
