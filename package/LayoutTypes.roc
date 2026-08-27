@@ -114,6 +114,15 @@ LayoutTypes := [].{
 
 		is_eq : Bounds, Bounds -> Bool
 		is_eq = |a, b| a.position == b.position and a.size == b.size
+
+		flatten : Bounds -> { x : F32, y : F32, width : F32, height : F32 }
+		flatten = |bounds| {
+			x: bounds.position.x,
+			y: bounds.position.y,
+			width: bounds.size.w,
+			height: bounds.size.h,
+		}
+
 	}
 
 	VisibleRegion : [Visible(Bounds), Culled]

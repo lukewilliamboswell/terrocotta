@@ -968,22 +968,6 @@ is_image_node = |node| match node.kind {
 	_ => Bool.False
 }
 
-text_align_offset : Element.TextAlign, F32, F32 -> F32
-text_align_offset = |align, box_width, text_width| match align {
-	Left => 0
-	Center => (box_width - text_width) * 0.5
-	Right => box_width - text_width
-}
-
-text_line_bounds : Bounds, Text.Config, Text.Line, U64 -> Bounds
-text_line_bounds = |bounds, config, line, line_offset| {
-	position: {
-		x: bounds.position.x + text_align_offset(config.align, bounds.size.w, line.width),
-		y: bounds.position.y + line_offset.to_f32() * line.height,
-	},
-	size: { w: line.width, h: line.height },
-}
-
 ## Check whether a node intersects every clipping ancestor.
 node_intersects_ancestor_clips : List(LayoutNode), LayoutNode, ParentIndex -> Try(Bool, [OutOfBounds, ..])
 node_intersects_ancestor_clips = |nodes, node, parent| match parent {
@@ -1353,9 +1337,10 @@ text_line_positions = |layout| {
 		text_data = text_data_result?
 		content = layout.text_contents.get(text_data.content_index)?
 		var $positions = []
+		node_bounds = layout_node_bounds(node)
 		for line_offset in 0..<text_data.lines_count {
 			line = layout.text_lines.get(text_data.lines_start + line_offset)?
-			line_bounds = text_line_bounds(layout_node_bounds(node), text_data.config, line, line_offset)
+			line_bounds = Text.line_bounds(node_bounds.flatten(), text_data.config, line, line_offset)
 			$positions = $positions.append({
 				x: line_bounds.position.x,
 				y: line_bounds.position.y,
