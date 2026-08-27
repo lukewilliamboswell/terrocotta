@@ -9,7 +9,6 @@ package
 		Element,
 		Layout,
 		Program,
-		Render,
 		Renderer,
 		TextMeasureCache,
 	]

@@ -140,21 +140,17 @@ The layout implementation is a direct port of [Clay](https://github.com/nicbarke
 Rendering starts after layout has been solved. At that point, every layout node
 has concrete position and size data.
 
-`Layout.to_commands` turns the solved node list into render commands:
+`Layout.draw!` traverses the solved node list in paint order and sends semantic
+operations directly to the host frame:
 
 ```roc
-Command : [
-    Rectangle(...),
-    RoundedRectangle(...),
-    Border(...),
-    Text(...),
-    Image(...),
-]
+layout.draw!(frame, screen)
 ```
 
-Those commands are still platform-independent. `Render.render!` walks the list
-and dispatches each command through a `Renderer` record supplied by the host
-platform.
+The traversal computes conservative subtree paint bounds for culling, preserves
+root and child paint order, scopes clipped descendants with
+`frame.with_scissor!`, and delegates background, text, image, and border
+primitives to `Renderer`.
 
 ## Runtime
 

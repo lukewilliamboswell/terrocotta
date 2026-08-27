@@ -21,13 +21,14 @@ import LayoutTypes exposing [
 	TextNodeData,
 	VisibleRegion.*,
 ]
-import Render
 import Renderer
 import Solver
 import Stack
 import Text
 import TextMeasureCache
+import rrt.Drawing
 import rrt.Font
+import rrt.Math
 import rrt.Texture
 
 # --- Public API ---
@@ -49,7 +50,6 @@ Layout :: {
 	stack : Stack(LayoutFrame),
 }.{
 	LayoutError : [InternalError, OutOfBounds, NodeIdNotFound(NodeId), DuplicateNodeId, UnmatchedCloseBox, AttachmentCycle]
-	TextSize : Render.TextSize
 	NodeId : U64
 
 	## Create an empty layout with the real font inherited at its root.
@@ -167,10 +167,18 @@ Layout :: {
 		Ok($layout)
 	}
 
-	## Phase 2: Extract render commands from a solved layout.
-	to_commands : Layout, { w : F32, h : F32 } -> Try(List(Render.Command), LayoutError)
-	to_commands = |layout, screen| {
-		emit_render_commands(layout, screen)
+	## Draw a solved layout directly through semantic renderer operations.
+	draw! : Layout, frame, Size => Try({}, [Exit(I64), ..])
+		where [
+			frame.rectangle! : frame, Drawing.Rectangle => {},
+			frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
+			frame.text! : frame, Drawing.Text => {},
+			frame.texture! : frame, Drawing.TextureDraw => {},
+			frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
+		]
+	draw! = |layout, frame, screen| {
+		draw_layout_direct!(layout, frame, screen).map_err(|_| Exit(1))?
+		Ok({})
 	}
 
 	## Compute conservative subtree paint bounds in node-list order.
@@ -958,7 +966,116 @@ is_image_node = |node| match node.kind {
 	_ => Bool.False
 }
 
-# --- Render Command Extraction (Private) ---
+# --- Rendering (Private) ---
+
+draw_layout_direct! : Layout, frame, Size => Try({}, [Exit(I64), ..])
+	where [
+		frame.rectangle! : frame, Drawing.Rectangle => {},
+		frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
+		frame.text! : frame, Drawing.Text => {},
+		frame.texture! : frame, Drawing.TextureDraw => {},
+		frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
+	]
+draw_layout_direct! = |layout, frame, screen| {
+	paint_bounds = compute_layout_paint_bounds(layout).map_err(|_| Exit(1))?
+	roots = roots_in_z_order(layout, BackToFront).map_err(|_| Exit(1))?
+	for root in roots {
+		match root.clip {
+			Unclipped => draw_node_direct!(layout, root.index, frame, screen, Unclipped, paint_bounds)?
+			Clipped(bounds) => {
+				scope_result = frame.with_scissor!(
+					bounds_to_scissor(bounds),
+					|scissor_frame| {
+						draw_node_direct!(layout, root.index, scissor_frame, screen, Clipped(bounds), paint_bounds).map_err(|_| ScopeLimit)?
+						Ok({})
+					},
+				)
+				match scope_result {
+					Ok(_) => {}
+					Err(_) => Err(Exit(1))?
+				}
+			}
+		}
+	}
+	Ok({})
+}
+
+draw_node_direct! : Layout, U64, frame, Size, Floating.Clip, List(Bounds) => Try({}, [Exit(I64), ..])
+	where [
+		frame.rectangle! : frame, Drawing.Rectangle => {},
+		frame.rounded_rectangle! : frame, Drawing.RoundedRectangle => {},
+		frame.text! : frame, Drawing.Text => {},
+		frame.texture! : frame, Drawing.TextureDraw => {},
+		frame.with_scissor! : frame, Math.Rect, (frame => Try({}, [ScopeLimit])) => Try({}, [ScopeLimit]),
+	]
+draw_node_direct! = |layout, index, frame, screen, clip, paint_bounds| {
+	node = layout.nodes.get(index).map_err(|_| Exit(1))?
+	subtree_paint_bounds = paint_bounds.get(index).map_err(|_| Exit(1))?
+	viewport = { position: { x: 0, y: 0 }, size: screen }
+	if LayoutTypes.visible_region(subtree_paint_bounds, viewport, clip) == Culled {
+		Ok({})
+	} else {
+		context = renderer_context(layout, node, clip, subtree_paint_bounds).map_err(|_| Exit(1))?
+		match context.node {
+			Box(box) => {
+				Renderer.draw_background!(frame, context.placement, box.config)
+				child_clip = effective_child_clip(context, box)
+				draw_inner! = |inner_frame| {
+					parent = layout.nodes.get(index).map_err(|_| Exit(1))?
+					for offset in 0..<parent.child_count {
+						child_index = layout.child_indices.get(parent.child_start + offset).map_err(|_| Exit(1))?
+						draw_node_direct!(layout, child_index, inner_frame, screen, child_clip, paint_bounds)?
+					}
+					Renderer.draw_border!(inner_frame, context.placement, box.config)
+					Ok({})
+				}
+				match box.clip_scope {
+					NoClip => draw_inner!(frame)?
+					ClipScope(_) => {
+						clip_bounds = match child_clip {
+							Clipped(bounds) => bounds
+							Unclipped => context.placement.bounds
+						}
+						scope_result = frame.with_scissor!(
+							bounds_to_scissor(clip_bounds),
+							|scissor_frame| {
+								draw_inner!(scissor_frame).map_err(|_| ScopeLimit)?
+								Ok({})
+							},
+						)
+						match scope_result {
+							Ok(_) => {}
+							Err(_) => Err(Exit(1))?
+						}
+					}
+				}
+			}
+			Text(text) => {
+				text_data_result = match node.kind {
+					TextNode(text_data) => Ok(text_data)
+					_ => Err(Exit(1))
+				}
+				text_data = text_data_result?
+				content = layout.text_contents.get(text_data.content_index).map_err(|_| Exit(1))?
+				for line_offset in 0..<text.line_count {
+					line = layout.text_lines.get(text_data.lines_start + line_offset).map_err(|_| Exit(1))?
+					placement = text_line_placement(context.placement, text.config, line, line_offset)
+					Renderer.draw_text_line!(frame, placement, Text.line_text(content, line), text.config, text_data.font)
+				}
+			}
+			Image(image) => Renderer.draw_image!(frame, context.placement, image)
+		}
+		Ok({})
+	}
+}
+
+bounds_to_scissor : Bounds -> { x : F32, y : F32, width : F32, height : F32 }
+bounds_to_scissor = |bounds| {
+	x: bounds.position.x,
+	y: bounds.position.y,
+	width: bounds.size.w,
+	height: bounds.size.h,
+}
 
 text_align_offset : Element.TextAlign, F32, F32 -> F32
 text_align_offset = |align, box_width, text_width| match align {
@@ -967,48 +1084,16 @@ text_align_offset = |align, box_width, text_width| match align {
 	Right => box_width - text_width
 }
 
-emit_render_commands : Layout, Size -> Try(List(Render.Command), LayoutError)
-emit_render_commands = |layout, screen| {
-	realize_render_output(layout, screen, Renderer.command_collector)
-}
-
-## Instantiate the same realization path with `{}` output. The host Draw
-## backend will replace this no-op capability in Phase 4.
-realize_noop_output : Layout, Size -> Try({}, LayoutError)
-realize_noop_output = |layout, screen| realize_render_output(layout, screen, Renderer.noop)
-
-## Realize every root through a generic semantic renderer capability.
-realize_render_output : Layout, Size, Renderer.Capability(output) -> Try(output, LayoutError)
-realize_render_output = |layout, screen, renderer| {
-	paint_bounds = compute_layout_paint_bounds(layout)?
-	var $output = Renderer.empty(renderer)
-	for root in roots_in_z_order(layout, BackToFront)? {
-		root_output = match root.clip {
-			Unclipped => realize_node_output(layout, root.index, screen, Unclipped, paint_bounds, renderer)
-			Clipped(bounds) => {
-				before = Renderer.begin_clip(renderer, { bounds: bounds })
-				inner = realize_node_output(layout, root.index, screen, Clipped(bounds), paint_bounds, renderer)?
-				after = Renderer.end_clip(renderer, {})
-				Ok(Renderer.combine(renderer, before, Renderer.combine(renderer, inner, after)))
-			}
-		}?
-		$output = Renderer.combine(renderer, $output, root_output)
-	}
-	Ok($output)
-}
-
-## Realize one node and its descendants in clipping-safe paint order.
-realize_node_output : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Capability(output) -> Try(output, LayoutError)
-realize_node_output = |layout, index, screen, clip, paint_bounds, renderer| {
-	node = layout.nodes.get(index)?
-	subtree_paint_bounds = paint_bounds.get(index)?
-	viewport = { position: { x: 0, y: 0 }, size: screen }
-	if LayoutTypes.visible_region(subtree_paint_bounds, viewport, clip) == Culled {
-		Ok(Renderer.empty(renderer))
-	} else {
-		context = renderer_context(layout, node, clip, subtree_paint_bounds)?
-		realize_context_output(layout, index, screen, paint_bounds, context, renderer)
-	}
+text_line_placement : Renderer.Placement, Text.Config, Text.Line, U64 -> Renderer.Placement
+text_line_placement = |placement, config, line, line_offset| {
+	..placement,
+	bounds: {
+		position: {
+			x: placement.bounds.position.x + text_align_offset(config.align, placement.bounds.size.w, line.width),
+			y: placement.bounds.position.y + line_offset.to_f32() * line.height,
+		},
+		size: { w: line.width, h: line.height },
+	},
 }
 
 ## Build public settled context only after culling. Text content and line slices
@@ -1035,90 +1120,6 @@ renderer_context = |layout, node, clip, paint_bounds| {
 		paint_bounds,
 		node: context_node,
 	})
-}
-
-## Compose the existing box paint wrappers around terminal realization.
-realize_context_output : Layout, U64, Size, List(Bounds), Renderer.Context, Renderer.Capability(output) -> Try(output, LayoutError)
-realize_context_output = |layout, index, screen, paint_bounds, context, renderer| {
-	match context.node {
-		Box(box) => {
-			background = Renderer.background(renderer, context.placement, box.config)
-			clip_start = match box.clip_scope {
-				ClipScope(scope) => Renderer.begin_clip(renderer, scope.start)
-				NoClip => Renderer.empty(renderer)
-			}
-			child_clip = effective_child_clip(context, box)
-			inner = realize_terminal_output(layout, index, screen, child_clip, paint_bounds, context, renderer)?
-			border = Renderer.border(renderer, context.placement, box.config)
-			clip_end = match box.clip_scope {
-				ClipScope(scope) => Renderer.end_clip(renderer, scope.end)
-				NoClip => Renderer.empty(renderer)
-			}
-			Ok(combine_outputs(renderer, [background, clip_start, inner, border, clip_end]))
-		}
-		_ => realize_terminal_output(layout, index, screen, context.placement.clip, paint_bounds, context, renderer)
-	}
-}
-
-## The terminal performs only child, text-line, or image realization.
-realize_terminal_output : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Context, Renderer.Capability(output) -> Try(output, LayoutError)
-realize_terminal_output = |layout, index, screen, child_clip, paint_bounds, context, renderer| {
-	match context.node {
-		Box(_) => realize_child_output(layout, index, screen, child_clip, paint_bounds, renderer)
-		Text(text) => realize_text_line_output(layout, index, context.placement, text, renderer)
-		Image(image) => Ok(Renderer.image(renderer, context.placement, image))
-	}
-}
-
-realize_child_output : Layout, U64, Size, Floating.Clip, List(Bounds), Renderer.Capability(output) -> Try(output, LayoutError)
-realize_child_output = |layout, parent_index, screen, child_clip, paint_bounds, renderer| {
-	parent = layout.nodes.get(parent_index)?
-	var $output = Renderer.empty(renderer)
-	for offset in 0..<parent.child_count {
-		child_index = layout.child_indices.get(parent.child_start + offset)?
-		child_output = realize_node_output(layout, child_index, screen, child_clip, paint_bounds, renderer)?
-		$output = Renderer.combine(renderer, $output, child_output)
-	}
-	Ok($output)
-}
-
-realize_text_line_output : Layout, U64, Renderer.Placement, Renderer.TextContext, Renderer.Capability(output) -> Try(output, LayoutError)
-realize_text_line_output = |layout, index, placement, text, renderer| {
-	node = layout.nodes.get(index)?
-	text_data_result = match node.kind {
-		TextNode(text_data) => Ok(text_data)
-		_ => Err(InternalError)
-	}
-	text_data = text_data_result?
-	content = layout.text_contents.get(text_data.content_index)?
-	font = text_data.font
-	var $output = Renderer.empty(renderer)
-	for line_offset in 0..<text.line_count {
-		line = layout.text_lines.get(text_data.lines_start + line_offset)?
-		config = text.config
-		line_placement = {
-			..placement,
-			bounds: {
-				position: {
-					x: placement.bounds.position.x + text_align_offset(config.align, placement.bounds.size.w, line.width),
-					y: placement.bounds.position.y + line_offset.to_f32() * line.height,
-				},
-				size: { w: line.width, h: line.height },
-			},
-		}
-		line_output = Renderer.text_line(renderer, line_placement, Text.line_text(content, line), config, font)
-		$output = Renderer.combine(renderer, $output, line_output)
-	}
-	Ok($output)
-}
-
-combine_outputs : Renderer.Capability(output), List(output) -> output
-combine_outputs = |renderer, outputs| {
-	var $combined = Renderer.empty(renderer)
-	for output in outputs {
-		$combined = Renderer.combine(renderer, $combined, output)
-	}
-	$combined
 }
 
 effective_child_clip : Renderer.Context, Renderer.BoxContext -> Floating.Clip
@@ -1293,8 +1294,7 @@ expect {
 	}
 }
 
-## Clipped rendering keeps the child between scissor commands and paints the
-## inbound border over descendants before ending the clip.
+## A clipping box exposes the settled clip scope consumed by direct traversal.
 expect {
 	root_cfg = fixed_cfg(100, 60)
 		.direction(Col)
@@ -1303,10 +1303,16 @@ expect {
 		.overflow(Hidden, Scroll)
 	child_cfg = fixed_cfg(90, 80).background(Color.gray).overflow(Visible, Visible)
 	match build_and_solve(root_cfg, [child_cfg], { w: 200, h: 200 }) {
-		Ok(layout) => match layout.to_commands({ w: 200, h: 200 }) {
-			Ok([Rectangle(_), ScissorStart(bounds), Rectangle(_), Border(_), ScissorEnd]) =>
-				bounds.x == 0 and bounds.y == 0 and bounds.width == 100 and bounds.height == 60
-			_ => Bool.False
+		Ok(layout) => {
+			root = layout.nodes.get(0)?
+			paint_bounds = layout.compute_paint_bounds()?
+			root_paint_bounds = paint_bounds.get(0)?
+			context = renderer_context(layout, root, Unclipped, root_paint_bounds)?
+			match context.node {
+				Box({ clip_scope: ClipScope(scope), .. }) => scope.start.bounds
+					== { position: { x: 0, y: 0 }, size: { w: 100, h: 60 } }
+				_ => Bool.False
+			}
 		}
 		Err(_) => Bool.False
 	}
@@ -1484,72 +1490,6 @@ build_button_text_layout = |content, preferred_w, line_h, words, screen| {
 	$layout.solve(screen)
 }
 
-## Culling suppresses terminal text lookup, so malformed private text storage
-## on a fully offscreen subtree is not observed.
-expect {
-	build = || {
-		words = [test_word(0, 4, 4)]
-		var $layout = build_text_test_layout(test_text_cfg(Words), "text", 4, words, { w: 100, h: 100 })?
-		root = $layout.nodes.get(0)?
-		text_node = $layout.nodes.get(1)?
-		bad_kind_result = match text_node.kind {
-			TextNode(text_data) => Ok(TextNode({ ..text_data, content_index: 99 }))
-			_ => Err(InternalError)
-		}
-		bad_kind = bad_kind_result?
-		var $nodes = $layout.nodes.set(0, { ..root, position: { x: -200, y: 0 } })?
-		$nodes = $nodes.set(1, { ..text_node, kind: bad_kind, position: { x: -200, y: 0 } })?
-		{ ..$layout, nodes: $nodes }.to_commands({ w: 100, h: 100 })
-	}
-
-	match build() {
-		Ok([]) => Bool.True
-		_ => Bool.False
-	}
-}
-
-## A visible text node performs its private content lookup in the terminal and
-## propagates a missing-content error.
-expect {
-	build = || {
-		words = [test_word(0, 4, 4)]
-		var $layout = build_text_test_layout(test_text_cfg(Words), "text", 4, words, { w: 100, h: 100 })?
-		text_node = $layout.nodes.get(1)?
-		bad_kind_result = match text_node.kind {
-			TextNode(text_data) => Ok(TextNode({ ..text_data, content_index: 99 }))
-			_ => Err(InternalError)
-		}
-		bad_kind = bad_kind_result?
-		nodes = $layout.nodes.set(1, { ..text_node, kind: bad_kind })?
-		{ ..$layout, nodes }.to_commands({ w: 100, h: 100 })
-	}
-
-	match build() {
-		Err(OutOfBounds) => Bool.True
-		_ => Bool.False
-	}
-}
-
-## The complete node, child, text, and image traversal specializes to `{}`
-## through the same generic realization functions.
-expect {
-	build = || {
-		var $layout = Layout.test_layout()
-		$layout = open_box(
-			$layout,
-			Auto,
-			fixed_cfg(40, 20).background(Color.gray).overflow(Hidden, Hidden),
-		)?
-		$layout = add_test_text($layout, "text", 4, [test_word(0, 4, 4)])?
-		$layout = add_image($layout, 100, Texture.stub)?
-		$layout = close_box($layout)?
-		$layout = $layout.solve({ w: 100, h: 100 })?
-		realize_noop_output($layout, { w: 100, h: 100 })
-	}
-
-	build() == Ok({})
-}
-
 build_nested_fit_text_layout : Element.BoxConfig, Str, F32, List(Text.Word), Size -> Try(Layout, LayoutError)
 build_nested_fit_text_layout = |root_cfg, content, preferred_w, words, screen| {
 	var $layout = Layout.test_layout()
@@ -1588,40 +1528,35 @@ node_pos_y = |layout, index| {
 	}
 }
 
-first_text_command_y : Layout -> F32
-first_text_command_y = |layout| {
-	match layout.to_commands({ w: 1000, h: 1000 }) {
-		Ok(commands) => {
-			var $y = -1
-			for command in commands {
-				match command {
-					Text(text_cmd) => if $y < 0 {
-						$y = text_cmd.y
-					}
-					_ => {}
-				}
-			}
-			$y
+text_line_positions : Layout -> List({ x : F32, y : F32, text : Str })
+text_line_positions = |layout| {
+	compute = || {
+		node = layout.nodes.get(1)?
+		text_data_result = match node.kind {
+			TextNode(text_data) => Ok(text_data)
+			_ => Err(InternalError)
 		}
-		Err(_) => -1
+		text_data = text_data_result?
+		content = layout.text_contents.get(text_data.content_index)?
+		placement = {
+			id: node.id,
+			bounds: layout_node_bounds(node),
+			clip: Unclipped,
+		}
+		var $positions = []
+		for line_offset in 0..<text_data.lines_count {
+			line = layout.text_lines.get(text_data.lines_start + line_offset)?
+			line_bounds = text_line_placement(placement, text_data.config, line, line_offset).bounds
+			$positions = $positions.append({
+				x: line_bounds.position.x,
+				y: line_bounds.position.y,
+				text: Text.line_text(content, line),
+			})
+		}
+		Ok($positions)
 	}
-}
-
-text_command_positions : Layout -> List({ x : F32, y : F32, text : Str })
-text_command_positions = |layout| {
-	match layout.to_commands({ w: 1000, h: 1000 }) {
-		Ok(commands) => {
-			var $positions = []
-			for command in commands {
-				match command {
-					Text(text_cmd) => {
-						$positions = $positions.append({ x: text_cmd.x, y: text_cmd.y, text: text_cmd.text })
-					}
-					_ => {}
-				}
-			}
-			$positions
-		}
+	match compute() {
+		Ok(positions) => positions
 		Err(_) => []
 	}
 }
@@ -1700,8 +1635,8 @@ expect {
 	}
 }
 
-## Command extraction keeps a visible-overflow child when its parent is fully
-## offscreen.
+## Conservative subtree paint bounds keep a visible-overflow child from being
+## culled with its offscreen parent.
 expect {
 	build = || {
 		var $layout = Layout.test_layout()
@@ -1714,11 +1649,17 @@ expect {
 		child = $layout.nodes.get(1)?
 		var $nodes = $layout.nodes.set(0, { ..root, position: { x: -20, y: 0 } })?
 		$nodes = $nodes.set(1, { ..child, position: { x: 1, y: 2 } })?
-		{ ..$layout, nodes: $nodes }.to_commands({ w: 100, h: 100 })
+		updated = { ..$layout, nodes: $nodes }
+		paint_bounds = updated.compute_paint_bounds()?
+		Ok(paint_bounds.get(0)?)
 	}
 
 	match build() {
-		Ok([Rectangle(bounds)]) => bounds.x == 1 and bounds.y == 2 and bounds.width == 5 and bounds.height == 5
+		Ok(bounds) => LayoutTypes.visible_region(
+			bounds,
+			{ position: { x: 0, y: 0 }, size: { w: 100, h: 100 } },
+			Unclipped,
+		) != Culled
 		_ => Bool.False
 	}
 }
@@ -1736,11 +1677,17 @@ expect {
 		child = $layout.nodes.get(1)?
 		var $nodes = $layout.nodes.set(0, { ..root, position: { x: -20, y: 0 } })?
 		$nodes = $nodes.set(1, { ..child, position: { x: 1, y: 2 } })?
-		{ ..$layout, nodes: $nodes }.to_commands({ w: 100, h: 100 })
+		updated = { ..$layout, nodes: $nodes }
+		paint_bounds = updated.compute_paint_bounds()?
+		Ok(paint_bounds.get(0)?)
 	}
 
 	match build() {
-		Ok([]) => Bool.True
+		Ok(bounds) => LayoutTypes.visible_region(
+			bounds,
+			{ position: { x: 0, y: 0 }, size: { w: 100, h: 100 } },
+			Unclipped,
+		) == Culled
 		_ => Bool.False
 	}
 }
@@ -1886,48 +1833,6 @@ expect {
 	}
 }
 
-## Floating expansion changes paint bounds and keeps an otherwise offscreen
-## root visible to command extraction.
-expect {
-	floating_config = {
-		..Element.default_floating_config,
-		offset: { x: -15, y: 20 },
-		expand: { w: 10, h: 5 },
-	}
-	cfg = fixed_cfg(10, 10)
-		.background(Color.white)
-		.floating(Floating({ target: Root, config: floating_config }))
-	build = || {
-		var $layout = Layout.test_layout()
-		$layout = open_box($layout, Id("expanded"), cfg)?
-		$layout = close_box($layout)?
-		$layout = $layout.solve({ w: 100, h: 100 })?
-		$layout.to_commands({ w: 100, h: 100 })
-	}
-
-	match build() {
-		Ok([Rectangle(bounds)]) =>
-			bounds.x == -25 and bounds.y == 15 and bounds.width == 30 and bounds.height == 20
-		_ => Bool.False
-	}
-}
-
-## Terminal extraction preserves empty transparent-box output.
-expect {
-	build = || {
-		var $layout = Layout.test_layout()
-		$layout = open_box($layout, Auto, fixed_cfg(10, 10))?
-		$layout = close_box($layout)?
-		$layout = $layout.solve({ w: 100, h: 100 })?
-		$layout.to_commands({ w: 100, h: 100 })
-	}
-
-	match build() {
-		Ok([]) => Bool.True
-		_ => Bool.False
-	}
-}
-
 ## Multiple roots retain back-to-front z-order independently of declaration
 ## order.
 expect {
@@ -1954,11 +1859,11 @@ expect {
 		)?
 		$layout = close_box($layout)?
 		$layout = $layout.solve({ w: 100, h: 100 })?
-		$layout.to_commands({ w: 100, h: 100 })
+		roots_in_z_order($layout, BackToFront)
 	}
 
 	match build() {
-		Ok([Rectangle(low), Rectangle(high)]) => low.color == Color.gray and high.color == Color.white
+		Ok([low, high]) => low.index == 1 and high.index == 0
 		_ => Bool.False
 	}
 }
@@ -2115,7 +2020,7 @@ expect {
 expect {
 	words = [test_word(0, 9, 9)]
 	match build_button_text_layout("click me", 9, 24, words, { w: 640, h: 420 }) {
-		Ok(layout) => first_text_command_y(layout) == node_pos_y(layout, 0) + 18
+		Ok(layout) => node_pos_y(layout, 1) == node_pos_y(layout, 0) + 18
 		Err(_) => Bool.False
 	}
 }
@@ -2138,12 +2043,12 @@ expect {
 	}
 }
 
-## Render extraction emits one text command per wrapped line with line-height y offsets.
+## Settled line placement applies line-height y offsets to wrapped text.
 expect {
 	words = [test_word(0, 3, 3), test_word(3, 3, 3), test_word(6, 2, 2)]
 	match build_text_test_layout(test_text_cfg(Words), "aa bb cc", 8, words, { w: 100, h: 100 }) {
 		Ok(layout) => {
-			positions = text_command_positions(layout)
+			positions = text_line_positions(layout)
 			match (positions.get(0), positions.get(1), positions.get(2)) {
 				(Ok(a), Ok(b), Ok(c)) => positions.len() == 3
 					and a.text == "aa"
@@ -2164,7 +2069,7 @@ expect {
 	words = [test_word(0, 8, 8), test_word(8, 4, 4)]
 	match build_text_test_layout(test_align_text_cfg(Center), "aaaaaaa bbbb", 12, words, { w: 100, h: 100 }) {
 		Ok(layout) => {
-			positions = text_command_positions(layout)
+			positions = text_line_positions(layout)
 			match (positions.get(0), positions.get(1)) {
 				(Ok(a), Ok(b)) => positions.len() == 2 and a.x == 1.5 and b.x == 3
 				_ => Bool.False
@@ -2179,7 +2084,7 @@ expect {
 	words = [test_word(0, 8, 8), test_word(8, 4, 4)]
 	match build_text_test_layout(test_align_text_cfg(Right), "aaaaaaa bbbb", 12, words, { w: 100, h: 100 }) {
 		Ok(layout) => {
-			positions = text_command_positions(layout)
+			positions = text_line_positions(layout)
 			match (positions.get(0), positions.get(1)) {
 				(Ok(a), Ok(b)) => positions.len() == 2 and a.x == 3 and b.x == 6
 				_ => Bool.False
@@ -2395,7 +2300,7 @@ expect {
 	}
 }
 
-## Pure command extraction preserves stub metadata and solved image bounds.
+## Solving preserves image texture metadata and fills the parent bounds.
 expect {
 	texture = { ..Texture.stub, width: 32, height: 16 }
 	root_cfg = fixed_cfg(100, 50)
@@ -2404,15 +2309,20 @@ expect {
 		$layout = open_box($layout, Auto, root_cfg)?
 		$layout = add_image($layout, 200, texture)?
 		$layout = close_box($layout)?
-		$layout = $layout.solve({ w: 100, h: 50 })?
-		$layout.to_commands({ w: 100, h: 50 })
+		$layout.solve({ w: 100, h: 50 })
 	}
 
 	match build() {
-		Ok([Image(image)]) => image.width == 100
-			and image.height == 50
-				and image.texture.width == 32
-					and image.texture.height == 16
+		Ok(layout) => {
+			image = layout.nodes.get(1)?
+			match image.kind {
+				ImageNode(image_data) => image.size.w == 100
+					and image.size.h == 50
+						and image_data.texture.width == 32
+							and image_data.texture.height == 16
+				_ => Bool.False
+			}
+		}
 		_ => Bool.False
 	}
 }
