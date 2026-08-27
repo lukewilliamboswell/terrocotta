@@ -190,37 +190,40 @@ draw_node! = |frame, data, index, screen, clip, paint_bounds| {
 
 				# Descendants inherit the ancestor clip plus this box's overflow clip.
 				child_clip = effective_child_clip(placement, box)
+				should_clip = if box.overflow.x != Visible or box.overflow.y != Visible {
+					box_children_escape_paint_bounds(data, node, placement.bounds, paint_bounds).map_err(|_| Exit(1))?
+				} else {
+					Bool.False
+				}
 
-				draw_children! = |inner_frame| {
-				    # Paint children in declaration order
+				draw_inner! = |inner_frame| {
+					# Paint children in declaration order
 					parent = data.nodes.get(index).map_err(|_| Exit(1))?
 					for offset in 0..<parent.child_count {
 						child_index = data.child_indices.get(parent.child_start + offset).map_err(|_| Exit(1))?
 						draw_node!(inner_frame, data, child_index, screen, child_clip, paint_bounds)?
 					}
+					# Paint parent border above children (inside host scissor when clipping).
+					Renderer.draw_border!(inner_frame, placement, box)
 					Ok({})
 				}
 
-				# Establish a host scissor when descendants are clipped to this box.
-				match child_clip {
-					Unclipped => draw_children!(frame)?
-					Clipped(bounds) => {
-						scope_result = frame.with_scissor!(
-    						bounds.flatten(),
-							|scissor_frame| {
-								draw_children!(scissor_frame).map_err(|_| ScopeLimit)?
-								Ok({})
-							},
-						)
-						match scope_result {
-							Ok(_) => {}
-							Err(_) => Err(Exit(1))?
-						}
+				# Establish a host scissor only when descendants would escape this box.
+				if should_clip {
+					clip_bounds = match child_clip {
+						Clipped(bounds) => bounds
+						Unclipped => placement.bounds
 					}
+					frame.with_scissor!(
+						clip_bounds.flatten(),
+						|scissor_frame| {
+							draw_inner!(scissor_frame).map_err(|_| ScopeLimit)?
+							Ok({})
+						},
+					).map_err(|_| Exit(1))?
+				} else {
+					draw_inner!(frame)?
 				}
-
-				# Paint parent border above children (and outside any host scissor).
-				Renderer.draw_border!(frame, placement, box)
 			}
 			TextNode(text_data) => {
 				# Resolve content
@@ -239,6 +242,19 @@ draw_node! = |frame, data, index, screen, clip, paint_bounds| {
 		}
 		Ok({})
 	}
+}
+
+box_children_escape_paint_bounds : Renderer.Data, LayoutNode, Bounds, List(Bounds) -> Try(Bool, [OutOfBounds, ..])
+box_children_escape_paint_bounds = |data, box_node, bounds, paint_bounds| {
+	var $escapes = Bool.False
+	for offset in 0..<box_node.child_count {
+		child_index = data.child_indices.get(box_node.child_start + offset)?
+		child_paint = paint_bounds.get(child_index)?
+		if !child_paint.is_empty() and !bounds.contains_bounds(child_paint) {
+			$escapes = Bool.True
+		}
+	}
+	Ok($escapes)
 }
 
 ## Compute the clip children inherit from their parent box.
