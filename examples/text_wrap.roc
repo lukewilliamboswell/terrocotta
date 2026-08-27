@@ -90,7 +90,6 @@ view = |_model| {
 				.gap(theme.gap)
 				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.background(theme.palette.background.base.fill)
-				.font_family(model.font)
 				.font_color(theme.palette.background.base.content)
 				.font_size(theme.font_size),
 		},

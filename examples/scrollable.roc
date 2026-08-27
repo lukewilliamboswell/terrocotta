@@ -41,7 +41,7 @@ view = |_model| {
 	for index in 1..<20 {
 		$rows = $rows.append(row(index))
 	}
-	# rows = (1..<20).iter().map(row).collect()
+	rows = (1..<20).iter().map(row).collect()
 	box(
 		{
 			id: Id("page"),
@@ -51,7 +51,6 @@ view = |_model| {
 				.pad(theme.gap, theme.gap, theme.gap, theme.gap)
 				.gap(theme.gap)
 				.background(theme.palette.background.base.fill)
-				.font_family(theme.font)
 				.font_size(theme.font_size)
 				.font_color(theme.palette.background.base.content),
 		},
