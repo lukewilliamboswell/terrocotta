@@ -19,6 +19,7 @@ import LayoutTypes exposing [
 	Pos,
 	Size,
 	TextNodeData,
+	VisibleRegion.*,
 ]
 import Render
 import Solver
@@ -170,6 +171,17 @@ Layout :: {
 	to_commands = |layout, screen| {
 		emit_render_commands(layout, screen)
 	}
+
+	## Compute conservative subtree paint bounds in node-list order.
+	## The solved node list is DFS preorder, so a reverse scan visits every
+	## child before its parent without another recursive traversal.
+	compute_paint_bounds : Layout -> Try(List(Bounds), LayoutError)
+	compute_paint_bounds = |layout| compute_layout_paint_bounds(layout)
+
+	## Shared viewport and clip visibility used by rendering, hit testing, and
+	## debug inspection.
+	visible_region : Bounds, Bounds, Floating.Clip -> LayoutTypes.VisibleRegion
+	visible_region = |paint_bounds, viewport, clip| LayoutTypes.visible_region(paint_bounds, viewport, clip)
 
 	## Return the deepest/latest box node ID containing the point.
 	hit_test : Layout, { x : F32, y : F32 } -> Try([Hit(NodeId), NoHit], LayoutError)
@@ -786,6 +798,58 @@ roots_in_z_order = |layout, z_order| {
 layout_node_bounds : LayoutNode -> Bounds
 layout_node_bounds = |node| { position: node.position, size: node.size }
 
+## Return the bounds painted by the node itself. Floating expansion changes
+## the root's painted rectangle and clipping scope, so it is applied before
+## descendant bounds are folded into the subtree result.
+node_own_paint_bounds : LayoutNode -> Bounds
+node_own_paint_bounds = |node| {
+	bounds = layout_node_bounds(node)
+	match node.placement {
+		Normal => bounds
+		Floating(config) => bounds.expand(config.expand)
+	}
+}
+
+## Compute conservative subtree paint bounds with one reverse DFS-order scan.
+compute_layout_paint_bounds : Layout -> Try(List(Bounds), Layout.LayoutError)
+compute_layout_paint_bounds = |layout| {
+	node_count = layout.nodes.len()
+	var $paint_bounds = layout.nodes.map(node_own_paint_bounds)
+
+	for offset in 0..<node_count {
+		index = node_count - 1 - offset
+		node = layout.nodes.get(index)?
+		own_bounds = node_own_paint_bounds(node)
+		var $subtree_bounds = own_bounds
+
+		for child_offset in 0..<node.child_count {
+			child_index = layout.child_indices.get(node.child_start + child_offset)?
+			child_bounds_result = if child_index <= index {
+				Err(InternalError)
+			} else {
+				$paint_bounds.get(child_index)
+			}
+			child_bounds = child_bounds_result?
+			visible_child_bounds = match node.kind {
+				BoxNode(box) => if box.overflow.x != Visible or box.overflow.y != Visible {
+					own_bounds.intersection(child_bounds)
+				} else {
+					child_bounds
+				}
+				_ => child_bounds
+			}
+
+			if !visible_child_bounds.is_empty() {
+				$subtree_bounds = $subtree_bounds.union(visible_child_bounds)
+			}
+		}
+
+		$paint_bounds = $paint_bounds.set(index, $subtree_bounds)?
+	}
+
+	Ok($paint_bounds)
+}
+
 ## Return the topmost box hit at a point.
 hit_index_at : Layout, Pos -> Try([Hit(U64), NoHit], LayoutError)
 hit_index_at = |layout, point| {
@@ -895,13 +959,6 @@ is_image_node = |node| match node.kind {
 
 # --- Render Command Extraction (Private) ---
 
-is_offscreen : Bounds, Size -> Bool
-is_offscreen = |bounds, screen|
-	!bounds.intersects({
-		position: { x: 0, y: 0 },
-		size: screen,
-	})
-
 text_align_offset : Element.TextAlign, F32, F32 -> F32
 text_align_offset = |align, box_width, text_width| match align {
 	Left => 0
@@ -912,10 +969,11 @@ text_align_offset = |align, box_width, text_width| match align {
 emit_render_commands : Layout, Size -> Try(List(Render.Command), LayoutError)
 emit_render_commands = |layout, screen| {
 	var $commands = []
+	paint_bounds = compute_layout_paint_bounds(layout)?
 	for root in roots_in_z_order(layout, BackToFront)? {
 		match root.clip {
 			Unclipped => {
-				$commands = emit_node_commands(layout, root.index, root.index, root.expand, screen, $commands)?
+				$commands = emit_node_commands(layout, root.index, screen, Unclipped, paint_bounds, $commands)?
 			}
 			Clipped(bounds) => {
 				$commands = $commands.append(
@@ -926,7 +984,7 @@ emit_render_commands = |layout, screen| {
 						height: bounds.size.h,
 					}),
 				)
-				$commands = emit_node_commands(layout, root.index, root.index, root.expand, screen, $commands)?
+				$commands = emit_node_commands(layout, root.index, screen, Clipped(bounds), paint_bounds, $commands)?
 				$commands = $commands.append(ScissorEnd)
 			}
 		}
@@ -935,15 +993,13 @@ emit_render_commands = |layout, screen| {
 }
 
 ## Emit one node and its descendants in clipping-safe draw order.
-emit_node_commands : Layout, U64, U64, Size, Size, List(Render.Command) -> Try(List(Render.Command), LayoutError)
-emit_node_commands = |layout, index, root_index, root_expand, screen, commands| {
+emit_node_commands : Layout, U64, Size, Floating.Clip, List(Bounds), List(Render.Command) -> Try(List(Render.Command), LayoutError)
+emit_node_commands = |layout, index, screen, clip, paint_bounds, commands| {
 	node = layout.nodes.get(index)?
-	paint_bounds = if index == root_index {
-		layout_node_bounds(node).expand(root_expand)
-	} else {
-		layout_node_bounds(node)
-	}
-	if is_offscreen(paint_bounds, screen) or !node_intersects_ancestor_clips(layout.nodes, node, node.parent)? {
+	node_bounds = node_own_paint_bounds(node)
+	subtree_paint_bounds = paint_bounds.get(index)?
+	viewport = { position: { x: 0, y: 0 }, size: screen }
+	if LayoutTypes.visible_region(subtree_paint_bounds, viewport, clip) == Culled {
 		Ok(commands)
 	} else {
 		var $commands = commands
@@ -952,29 +1008,37 @@ emit_node_commands = |layout, index, root_index, root_expand, screen, commands| 
 				if box.background.a > 0 {
 					$commands = $commands.append(
 						if box.radius > 0 {
-							RoundedRectangle({ x: paint_bounds.position.x, y: paint_bounds.position.y, width: paint_bounds.size.w, height: paint_bounds.size.h, radius: box.radius, color: box.background })
+							RoundedRectangle({ x: node_bounds.position.x, y: node_bounds.position.y, width: node_bounds.size.w, height: node_bounds.size.h, radius: box.radius, color: box.background })
 						} else {
-							Rectangle({ x: paint_bounds.position.x, y: paint_bounds.position.y, width: paint_bounds.size.w, height: paint_bounds.size.h, color: box.background })
+							Rectangle({ x: node_bounds.position.x, y: node_bounds.position.y, width: node_bounds.size.w, height: node_bounds.size.h, color: box.background })
 						},
 					)
 				}
 				clips = (box.overflow.x != Visible or box.overflow.y != Visible)
-					and children_escape_bounds(layout, node, paint_bounds)?
+					and children_escape_bounds(layout, node, node_bounds)?
 				if clips {
-					$commands = $commands.append(ScissorStart({ x: paint_bounds.position.x, y: paint_bounds.position.y, width: paint_bounds.size.w, height: paint_bounds.size.h }))
+					$commands = $commands.append(ScissorStart({ x: node_bounds.position.x, y: node_bounds.position.y, width: node_bounds.size.w, height: node_bounds.size.h }))
+				}
+				child_clip = if box.overflow.x != Visible or box.overflow.y != Visible {
+					match clip {
+						Unclipped => Clipped(node_bounds)
+						Clipped(ancestor_bounds) => Clipped(ancestor_bounds.intersection(node_bounds))
+					}
+				} else {
+					clip
 				}
 				for offset in 0..<node.child_count {
 					child_index = layout.child_indices.get(node.child_start + offset)?
-					$commands = emit_node_commands(layout, child_index, root_index, root_expand, screen, $commands)?
+					$commands = emit_node_commands(layout, child_index, screen, child_clip, paint_bounds, $commands)?
 				}
 				border_total = box.border.left + box.border.right + box.border.top + box.border.bottom
 				if box.border.color.a > 0 and border_total > 0 {
 					$commands = $commands.append(
 						Border({
-							x: paint_bounds.position.x,
-							y: paint_bounds.position.y,
-							width: paint_bounds.size.w,
-							height: paint_bounds.size.h,
+							x: node_bounds.position.x,
+							y: node_bounds.position.y,
+							width: node_bounds.size.w,
+							height: node_bounds.size.h,
 							color: box.border.color,
 							left: box.border.left,
 							right: box.border.right,
@@ -1458,6 +1522,117 @@ node_width = |layout, index| {
 	}
 }
 
+node_paint_bounds : Layout, U64 -> Bounds
+node_paint_bounds = |layout, index| {
+	match layout.compute_paint_bounds() {
+		Ok(bounds) => match bounds.get(index) {
+			Ok(value) => value
+			Err(_) => { position: { x: 0, y: 0 }, size: { w: 0, h: 0 } }
+		}
+		Err(_) => { position: { x: 0, y: 0 }, size: { w: 0, h: 0 } }
+	}
+}
+
+## A leaf's paint bounds equal its solved presentation bounds.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, fixed_cfg(10, 20))?
+		$layout = close_box($layout)?
+		$layout.solve({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok(layout) => node_paint_bounds(layout, 0) == { position: { x: 0, y: 0 }, size: { w: 10, h: 20 } }
+		Err(_) => Bool.False
+	}
+}
+
+## An unclipped parent includes paint from a child escaping its own bounds.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, fixed_cfg(10, 10).overflow(Visible, Visible))?
+		$layout = open_box($layout, Auto, fixed_cfg(5, 5))?
+		$layout = close_box($layout)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		child = $layout.nodes.get(1)?
+		nodes = $layout.nodes.set(1, { ..child, position: { x: 15, y: 2 } })?
+		Ok({ ..$layout, nodes })
+	}
+
+	match build() {
+		Ok(layout) => node_paint_bounds(layout, 0) == { position: { x: 0, y: 0 }, size: { w: 20, h: 10 } }
+		Err(_) => Bool.False
+	}
+}
+
+## A clipping parent excludes child paint outside its own bounds.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, fixed_cfg(10, 10).overflow(Hidden, Hidden))?
+		$layout = open_box($layout, Auto, fixed_cfg(5, 5))?
+		$layout = close_box($layout)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		child = $layout.nodes.get(1)?
+		nodes = $layout.nodes.set(1, { ..child, position: { x: 15, y: 2 } })?
+		Ok({ ..$layout, nodes })
+	}
+
+	match build() {
+		Ok(layout) => node_paint_bounds(layout, 0) == { position: { x: 0, y: 0 }, size: { w: 10, h: 10 } }
+		Err(_) => Bool.False
+	}
+}
+
+## Command extraction keeps a visible-overflow child when its parent is fully
+## offscreen.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, fixed_cfg(10, 10).overflow(Visible, Visible))?
+		$layout = open_box($layout, Auto, fixed_cfg(5, 5).background(Color.white))?
+		$layout = close_box($layout)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		root = $layout.nodes.get(0)?
+		child = $layout.nodes.get(1)?
+		var $nodes = $layout.nodes.set(0, { ..root, position: { x: -20, y: 0 } })?
+		$nodes = $nodes.set(1, { ..child, position: { x: 1, y: 2 } })?
+		{ ..$layout, nodes: $nodes }.to_commands({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok([Rectangle(bounds)]) => bounds.x == 1 and bounds.y == 2 and bounds.width == 5 and bounds.height == 5
+		_ => Bool.False
+	}
+}
+
+## A clipping offscreen parent safely culls the same escaped child.
+expect {
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Auto, fixed_cfg(10, 10).overflow(Hidden, Hidden))?
+		$layout = open_box($layout, Auto, fixed_cfg(5, 5).background(Color.white))?
+		$layout = close_box($layout)?
+		$layout = close_box($layout)?
+		$layout = $layout.solve({ w: 100, h: 100 })?
+		root = $layout.nodes.get(0)?
+		child = $layout.nodes.get(1)?
+		var $nodes = $layout.nodes.set(0, { ..root, position: { x: -20, y: 0 } })?
+		$nodes = $nodes.set(1, { ..child, position: { x: 1, y: 2 } })?
+		{ ..$layout, nodes: $nodes }.to_commands({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok([]) => Bool.True
+		_ => Bool.False
+	}
+}
+
 ## Closing boxes should preserve DFS node order while building contiguous
 ## direct-child ranges in child_indices.
 expect {
@@ -1622,6 +1797,30 @@ expect {
 		Ok([Rectangle(bounds)]) =>
 			bounds.x == -25 and bounds.y == 15 and bounds.width == 30 and bounds.height == 20
 		_ => Bool.False
+	}
+}
+
+## Floating expansion is included exactly once in the root's computed paint
+## bounds.
+expect {
+	floating_config = {
+		..Element.default_floating_config,
+		offset: { x: -15, y: 20 },
+		expand: { w: 10, h: 5 },
+	}
+	cfg = fixed_cfg(10, 10)
+		.floating(Floating({ target: Root, config: floating_config }))
+	build = || {
+		var $layout = Layout.test_layout()
+		$layout = open_box($layout, Id("paint-expanded"), cfg)?
+		$layout = close_box($layout)?
+		$layout.solve({ w: 100, h: 100 })
+	}
+
+	match build() {
+		Ok(layout) => node_paint_bounds(layout, 0)
+			== { position: { x: -25, y: 15 }, size: { w: 30, h: 20 } }
+		Err(_) => Bool.False
 	}
 }
 
