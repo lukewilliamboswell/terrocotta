@@ -1,13 +1,14 @@
 ## Basic Terracotta renderer for current roc-ray frame capabilities.
 ## Resource-heavy applications can supply their own adapter, as Screwbot does.
 import rr.Draw
+import rr.Font
 import rr.Assets as RayAssets
 
 import tc.Color
 import tc.Element
 import tc.Render
 
-RayFonts : { default : Draw.Font, custom : [NoRayFont, LoadedRayFont(Draw.Font)] }
+RayFonts : { default : Font.Font, custom : [NoRayFont, LoadedRayFont(Font.Font)] }
 RayTexture : [NoRayTexture, LoadedRayTexture(RayAssets.Texture)]
 
 RocRayRenderer := [].{
@@ -23,7 +24,7 @@ RocRayRenderer := [].{
 	}
 
 	## Snapshot the default and loaded fonts once; both may occur in a view.
-	with_font! : Draw.Font => Bundle
+	with_font! : Font.Font => Bundle
 	with_font! = |font| {
 		default_font = Draw.default_font!()
 		custom_font = Element.custom_font({
@@ -44,7 +45,7 @@ RocRayRenderer := [].{
 	}
 }
 
-renderer_for : RayFonts, RayTexture, Element.Font, Draw.Font -> RocRayRenderer.Bundle
+renderer_for : RayFonts, RayTexture, Element.Font, Font.Font -> RocRayRenderer.Bundle
 renderer_for = |ray_fonts, ray_texture, font, default_font| {
 	measure_text = |config| match config.font {
 		DefaultFont => default_font.measure({ text: config.text, size: config.size, spacing: config.spacing })
@@ -122,7 +123,6 @@ draw_command! = |frame, ray_fonts, ray_texture, command| match command {
 			spacing: item.spacing,
 			color: ray_color(item.color),
 			font: ray_fonts.default,
-			align: Draw.align_top_left,
 		})
 		CustomFont(resource) => match ray_fonts.custom {
 			NoRayFont => Element.draw_font!(
@@ -142,7 +142,6 @@ draw_command! = |frame, ray_fonts, ray_texture, command| match command {
 				spacing: item.spacing,
 				color: ray_color(item.color),
 				font,
-				align: Draw.align_top_left,
 			})
 		}
 	}

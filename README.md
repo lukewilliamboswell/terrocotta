@@ -111,5 +111,9 @@ Find more examples at:
 ## Testing
 
 ```bash
-roc test package/main.roc
+ROC=/path/to/roc_nightly-linux_x86_64-2026-09-07-14d9829/roc scripts/check.sh
 ```
+
+The check script refuses to run with a debug build or any compiler other than
+the nightly pinned by roc-ray 0.10.0-rc5. It tests the package and checks every
+example, including Screwbot.
